@@ -1,10 +1,10 @@
 # Sistema Bancario Simulado - Base POO en PHP
 
-Proyecto base orientado a objetos para un sistema bancario simulado, con estructura modular y separacion de roles, listo para migrar a MVC.
+Proyecto base orientado a objetos para un sistema bancario simulado, con estructura modular y separacion de roles...
 
 ## Estructura del proyecto
 
-```txt
+```
 BANCO - PHP/
 ├── index.php
 ├── README.md
@@ -51,33 +51,4 @@ BANCO - PHP/
 - **Encapsulamiento**: atributos `private/protected` y uso de `getters/setters`.
 - **Herencia**: `Cliente` y `Administrador` heredan de `Usuario`.
 - **Polimorfismo**: `obtenerPermisos()` implementado de forma distinta en cada hijo.
-
-## Vista de prueba
-
-- `index.php` ahora renderiza una interfaz HTML:
-  - resumen de administrador y cliente,
-  - resultado de deposito,
-  - resultado de transferencia fallida por saldo insuficiente,
-  - saldos finales de ambas cuentas.
-- Estilos en `assets/css/styles.css`.
-
-## Como ejecutar localmente
-
-### Opcion 1 (recomendada): servidor embebido de PHP
-
-1. En la raiz del proyecto ejecutar:
-
-```bash
-php -S localhost:8000
-```
-
-2. Abrir en navegador:
-
-- [http://localhost:8000/index.php](http://localhost:8000/index.php)
-
-### Opcion 2: ejecucion por consola
-
-```bash
-php index.php
-```
 
