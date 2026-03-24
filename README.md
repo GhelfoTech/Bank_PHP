@@ -1,6 +1,6 @@
 # Sistema Bancario Simulado - Base POO en PHP
 
-Proyecto base orientado a objetos para un sistema bancario simulado, con estructura modular.
+Proyecto base orientado a objetos para un sistema bancario simulado, con estructura modular y separacion de roles, listo para migrar a MVC.
 
 ## Estructura del proyecto
 
@@ -8,12 +8,16 @@ Proyecto base orientado a objetos para un sistema bancario simulado, con estruct
 BANCO - PHP/
 ├── index.php
 ├── README.md
+├── assets/
+│   └── css/
+│       └── styles.css
 └── models/
     ├── Usuario.php
-    ├── Cliente.php
-    ├── Administrador.php
     ├── Cuenta.php
-    └── Movimiento.php
+    ├── Movimiento.php
+    └── Roles/
+        ├── Administrador.php
+        └── Cliente.php
 ```
 
 ## Jerarquia de clases
@@ -21,19 +25,10 @@ BANCO - PHP/
 - `Usuario` (abstracta)
   - Atributos base: `id`, `cedula`, `nombres`, `email`, `password`, `rol`, `estado`.
   - Define el metodo polimorfico `obtenerPermisos()`.
-- `Cliente` extiende `Usuario`
+- `models/Roles/Cliente` extiende `Usuario`
   - Implementa `obtenerPermisos()` con capacidades operativas de cliente.
-- `Administrador` extiende `Usuario`
+- `models/Roles/Administrador` extiende `Usuario`
   - Implementa `obtenerPermisos()` con capacidades administrativas.
-
-### Otras entidades
-
-- `Cuenta`
-  - Atributos: `id`, `usuario_id`, `numero_cuenta`, `saldo`, `estado`.
-  - Metodos de negocio: `validarSaldo($monto)`, `depositar($monto)`, `retirar($monto)`, `transferir(Cuenta $destino, $monto)`.
-- `Movimiento`
-  - Atributos: `id`, `cuenta_id`, `tipo`, `monto`, `fecha`, `descripcion`.
-  - Sirve como registro de trazabilidad en memoria para operaciones de cuenta.
 
 ## Flujo de datos
 
@@ -46,9 +41,9 @@ BANCO - PHP/
   - Los movimientos quedan guardados en un arreglo interno (`movimientos`) como historial temporal.
 
 - **Transferencias**
-  - El metodo `transferir` valida estado de cuentas y saldo disponible antes de operar.
-  - Se registra un movimiento de salida en la cuenta origen y otro de entrada en la cuenta destino.
-  - La logica deja documentado que, al migrar a base de datos, debe implementarse como **Transaccion Obligatoria** para asegurar atomicidad.
+  - `transferir(Cuenta $destino, $monto)` valida estado de cuentas y saldo disponible antes de operar.
+  - Se registra salida en cuenta origen y entrada en cuenta destino.
+  - La logica declara que en persistencia real debe usarse **Transaccion Obligatoria** para atomicidad.
 
 ## Principios POO aplicados
 
@@ -56,4 +51,33 @@ BANCO - PHP/
 - **Encapsulamiento**: atributos `private/protected` y uso de `getters/setters`.
 - **Herencia**: `Cliente` y `Administrador` heredan de `Usuario`.
 - **Polimorfismo**: `obtenerPermisos()` implementado de forma distinta en cada hijo.
+
+## Vista de prueba
+
+- `index.php` ahora renderiza una interfaz HTML:
+  - resumen de administrador y cliente,
+  - resultado de deposito,
+  - resultado de transferencia fallida por saldo insuficiente,
+  - saldos finales de ambas cuentas.
+- Estilos en `assets/css/styles.css`.
+
+## Como ejecutar localmente
+
+### Opcion 1 (recomendada): servidor embebido de PHP
+
+1. En la raiz del proyecto ejecutar:
+
+```bash
+php -S localhost:8000
+```
+
+2. Abrir en navegador:
+
+- [http://localhost:8000/index.php](http://localhost:8000/index.php)
+
+### Opcion 2: ejecucion por consola
+
+```bash
+php index.php
+```
 

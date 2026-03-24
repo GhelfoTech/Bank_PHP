@@ -1,6 +1,6 @@
 <?php
 
-require_once __DIR__ . '/Usuario.php';
+require_once __DIR__ . '/../Usuario.php';
 
 /**
  * Representa a un cliente del sistema bancario.
