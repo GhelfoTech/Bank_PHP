@@ -147,4 +147,15 @@
         </section>
     </main>
 </body>
+
+    <script>
+        
+        const socket = new WebSocket('ws://localhost:8080');
+
+        // Evento: Cuando la conexión se establece con éxito
+        socket.onopen = function(e) {
+            console.log("✅ Conectado al servidor de WebSockets del Banco");
+        };
+    </script>
+
 </html>
