@@ -1,6 +1,8 @@
 <?php
 
-require_once __DIR__ . '/../Usuario.php';
+namespace App\Models\Roles;
+
+use App\Models\Usuario;
 
 /**
  * Representa a un cliente del sistema bancario.

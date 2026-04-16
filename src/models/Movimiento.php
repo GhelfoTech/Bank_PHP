@@ -1,5 +1,7 @@
 <?php
 
+namespace App\Models;
+
 /**
  * Representa un movimiento financiero asociado a una cuenta.
  *

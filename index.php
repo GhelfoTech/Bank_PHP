@@ -1,12 +1,8 @@
 <?php
 
-// Carga de Modelos
-require_once __DIR__ . '/models/Roles/Administrador.php';
-require_once __DIR__ . '/models/Roles/Cliente.php';
-require_once __DIR__ . '/models/Cuenta.php';
+require_once __DIR__ . '/vendor/autoload.php';
 
-// Carga del Controlador
-require_once __DIR__ . '/controllers/BancoController.php';
+use App\Controllers\BancoController;
 
 $controller = new BancoController();
 $controller->mostrarPanel();

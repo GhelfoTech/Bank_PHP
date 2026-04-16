@@ -1,6 +1,8 @@
 <?php
 
-require_once __DIR__ . '/Movimiento.php';
+namespace App\Models;
+
+use App\Models\Movimiento;
 
 /**
  * Representa una cuenta bancaria vinculada a un usuario.

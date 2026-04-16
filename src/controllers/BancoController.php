@@ -1,5 +1,11 @@
 <?php
 
+namespace App\Controllers;
+
+use App\Models\Cuenta;
+use App\Models\Roles\Administrador;
+use App\Models\Roles\Cliente;
+
 class BancoController {
     public function mostrarPanel() {
         $administrador = new Administrador(1, '0102030405', 'Ana Admin', 'ana.admin@banco.local', 'admin123');
@@ -15,6 +21,8 @@ class BancoController {
 
         $depositoEstado = $depositoExitoso ? 'Exitoso' : 'Fallido';
         $transferenciaEstado = $transferenciaExitosa ? 'Exitoso' : 'Fallido';
+        $depositoMensaje = "Operacion de deposito: {$depositoEstado}";
+        $transferenciaMensaje = "Operacion de transferencia: {$transferenciaEstado}";
 
         require_once __DIR__ . '/../views/banco_view.php';
     }

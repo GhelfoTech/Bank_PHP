@@ -1,5 +1,7 @@
 <?php
 
+namespace App\Models;
+
 /**
  * Clase abstracta base para representar usuarios del sistema bancario.
  *
