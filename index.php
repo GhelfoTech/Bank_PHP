@@ -32,7 +32,7 @@ $cuentaOrigen = new Cuenta(
     1,
     $cliente->getId(),
     '001-000001',
-    400.00,
+    100.00,
     true
 );
 
