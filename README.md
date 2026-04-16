@@ -1,54 +1,128 @@
-# Sistema Bancario Simulado - Base POO en PHP
+# Sistema Bancario Simulado en PHP
 
-Proyecto base orientado a objetos para un sistema bancario simulado, con estructura modular y separacion de roles...
+Proyecto demostrativo orientado a objetos con estructura tipo MVC, autoloading PSR-4 mediante Composer y base de infraestructura WebSocket con Ratchet.
 
-## Estructura del proyecto
+## Estructura actual del proyecto
 
-```
+```text
 BANCO - PHP/
-├── index.php
-├── README.md
-├── assets/
-│   └── css/
-│       └── styles.css
-└── models/
-    ├── Usuario.php
-    ├── Cuenta.php
-    ├── Movimiento.php
-    └── Roles/
-        ├── Administrador.php
-        └── Cliente.php
+├── bin/
+│   └── socket-server.php
+├── src/
+│   ├── controllers/
+│   │   └── BancoController.php
+│   ├── models/
+│   │   ├── Cuenta.php
+│   │   ├── Movimiento.php
+│   │   ├── Usuario.php
+│   │   └── Roles/
+│   │       ├── Administrador.php
+│   │       └── Cliente.php
+│   ├── views/
+│   │   └── banco_view.php
+│   └── Socket/
+│       └── Notificador.php
+├── vendor/
+├── composer.json
+├── composer.lock
+└── index.php
 ```
 
-## Jerarquia de clases
+## Autoloading y Namespaces
 
-- `Usuario` (abstracta)
-  - Atributos base: `id`, `cedula`, `nombres`, `email`, `password`, `rol`, `estado`.
+El proyecto utiliza Composer con mapeo PSR-4:
+
+```json
+"autoload": {
+  "psr-4": {
+    "App\\": "src/"
+  }
+}
+```
+
+Namespaces principales:
+
+- `App\Controllers` para controladores en `src/controllers/`
+- `App\Models` para modelos base en `src/models/`
+- `App\Models\Roles` para roles en `src/models/Roles/`
+- `App\Socket` para infraestructura WebSocket en `src/Socket/`
+
+El punto de entrada `index.php` carga solo `vendor/autoload.php` y luego instancia el controlador con `use App\Controllers\BancoController;`.
+
+## Capa de dominio (POO)
+
+### Jerarquia de clases
+
+- `Usuario` (abstracta):
+  - Centraliza atributos comunes (`id`, `cedula`, `nombres`, `email`, `password`, `rol`, `estado`).
   - Define el metodo polimorfico `obtenerPermisos()`.
-- `models/Roles/Cliente` extiende `Usuario`
-  - Implementa `obtenerPermisos()` con capacidades operativas de cliente.
-- `models/Roles/Administrador` extiende `Usuario`
-  - Implementa `obtenerPermisos()` con capacidades administrativas.
+- `Roles\Cliente` extiende `Usuario`:
+  - Implementa permisos operativos del cliente.
+- `Roles\Administrador` extiende `Usuario`:
+  - Implementa permisos administrativos.
 
-## Flujo de datos
+### Flujo funcional
 
-- **Usuario -> Cuenta**
-  - `Cuenta` se asocia a un usuario mediante `usuario_id`.
-  - Esto permite identificar al propietario de la cuenta dentro de la capa de dominio.
+- `Cuenta` se asocia a `Usuario` por `usuario_id`.
+- `Cuenta` registra objetos `Movimiento` en memoria al depositar, retirar o transferir.
+- `transferir(Cuenta $destino, float $monto)` valida estados/saldo y registra movimientos de salida/entrada.
 
-- **Cuenta -> Movimiento**
-  - Al ejecutar `depositar`, `retirar` o `transferir`, la cuenta genera objetos `Movimiento`.
-  - Los movimientos quedan guardados en un arreglo interno (`movimientos`) como historial temporal.
+## Simulacion actual (controlador + vista)
 
-- **Transferencias**
-  - `transferir(Cuenta $destino, $monto)` valida estado de cuentas y saldo disponible antes de operar.
-  - Se registra salida en cuenta origen y entrada en cuenta destino.
-  - La logica declara que en persistencia real debe usarse **Transaccion Obligatoria** para atomicidad.
+`BancoController`:
 
-## Principios POO aplicados
+- Crea instancias de administrador y cliente.
+- Crea cuenta origen y destino.
+- Simula un deposito y una transferencia.
+- Expone a la vista variables de estado y mensaje:
+  - `$depositoExitoso`, `$transferenciaExitosa`
+  - `$depositoEstado`, `$transferenciaEstado`
+  - `$depositoMensaje`, `$transferenciaMensaje`
 
-- **Abstraccion**: `Usuario` como clase abstracta.
-- **Encapsulamiento**: atributos `private/protected` y uso de `getters/setters`.
-- **Herencia**: `Cliente` y `Administrador` heredan de `Usuario`.
-- **Polimorfismo**: `obtenerPermisos()` implementado de forma distinta en cada hijo.
+`banco_view.php` renderiza los datos y muestra los mensajes de la simulacion en la seccion de trazabilidad de movimientos.
+
+## Infraestructura WebSocket (nuevo)
+
+### 1) Componente de mensajes
+
+Archivo: `src/Socket/Notificador.php`
+
+- Namespace: `App\Socket`
+- Implementa `Ratchet\MessageComponentInterface`
+- Logs implementados:
+  - `onOpen`: nueva conexion y `resourceId`
+  - `onMessage`: mensaje recibido y `resourceId`
+  - `onClose`: cierre de conexion
+  - `onError`: error de conexion y cierre del socket
+
+### 2) Script del servidor
+
+Archivo: `bin/socket-server.php`
+
+- Carga `vendor/autoload.php`
+- Levanta `IoServer` + `HttpServer` + `WsServer`
+- Usa `new App\Socket\Notificador()`
+- Escucha en el puerto `8080`
+- Imprime al iniciar:
+  - `Servidor de WebSockets iniciado en el puerto 8080...`
+
+## Instalacion
+
+```bash
+composer install
+```
+
+Si realizas cambios en clases/namespaces, regenera autoload:
+
+```bash
+composer dump-autoload
+```
+
+### Servidor WebSocket
+
+En otra terminal:
+
+```bash
+php bin/socket-server.php
+```
 
