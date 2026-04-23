@@ -27,3 +27,20 @@ class BancoController {
         require_once __DIR__ . '/../views/banco_view.php';
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -74,6 +74,8 @@
             </div>
         </section>
 
+
+        
         <section class="activity-log">
             <h3 style="margin-bottom: 25px; font-size: 1.2rem;">Trazabilidad de Movimientos</h3>
             
