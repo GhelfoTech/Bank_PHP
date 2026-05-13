@@ -160,12 +160,92 @@ class Cuenta
     }
 
     /**
+     * Busca una cuenta activa por numero y devuelve la entidad con datos del titular.
+     *
+     * @return array{cuenta: Cuenta, titular_cedula: string, titular_nombres: string}|null
+     */
+    public static function obtenerCuentaActivaConTitularPorNumero(PDO $db, string $numeroCuenta): ?array
+    {
+        $numero = trim($numeroCuenta);
+        if ($numero === '') {
+            return null;
+        }
+
+        $stmt = $db->prepare(
+            'SELECT c.id, c.usuario_id, c.numero_cuenta, c.saldo, c.estado,
+                    u.cedula AS titular_cedula, u.nombres AS titular_nombres
+             FROM cuentas c
+             INNER JOIN usuarios u ON u.id = c.usuario_id AND u.estado = 1
+             WHERE c.numero_cuenta = :numero AND c.estado = 1
+             LIMIT 1'
+        );
+        $stmt->execute(['numero' => $numero]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($row === false) {
+            return null;
+        }
+
+        $cuenta = new Cuenta(
+            (int) $row['id'],
+            (int) $row['usuario_id'],
+            (string) $row['numero_cuenta'],
+            (float) $row['saldo'],
+            (bool) $row['estado'],
+            $db
+        );
+
+        return [
+            'cuenta' => $cuenta,
+            'titular_cedula' => (string) $row['titular_cedula'],
+            'titular_nombres' => (string) $row['titular_nombres'],
+        ];
+    }
+
+    /**
+     * Construye textos de movimiento para transferencia (emisor y receptor).
+     */
+    private function construirDescripcionesTransferencia(
+        Cuenta $destino,
+        string $descripcionPersonalizada,
+        string $nombreOrigen,
+        string $nombreDestino
+    ): array {
+        $extra = trim($descripcionPersonalizada);
+        $sufijo = $extra !== '' ? (' - ' . $extra) : '';
+
+        $nomOrigen = trim($nombreOrigen);
+        $nomDestino = trim($nombreDestino);
+
+        if ($nomOrigen !== '' && $nomDestino !== '') {
+            return [
+                'Transferencia enviada a ' . $nomDestino . $sufijo,
+                'Transferencia recibida de ' . $nomOrigen . $sufijo,
+            ];
+        }
+
+        return [
+            'Transferencia enviada a ' . $destino->getNumeroCuenta() . $sufijo,
+            'Transferencia recibida desde ' . $this->numero_cuenta . $sufijo,
+        ];
+    }
+
+    /**
      * Transfiere fondos a otra cuenta.
      *
-     * Con PDO, el debito y el credito se ejecutan en una transaccion atomica.
+     * Con PDO, el debito, el credito y los movimientos se ejecutan en una transaccion atomica.
+     *
+     * @param string $descripcionPersonalizada Texto opcional anexado tras el nombre del contraparte.
+     * @param string $nombreOrigen             Nombre del titular emisor (para leyenda en destino).
+     * @param string $nombreDestino            Nombre del titular receptor (para leyenda en origen).
      */
-    public function transferir(Cuenta $destino, float $monto): bool
-    {
+    public function transferir(
+        Cuenta $destino,
+        float $monto,
+        string $descripcionPersonalizada = '',
+        string $nombreOrigen = '',
+        string $nombreDestino = ''
+    ): bool {
         if ($monto <= 0 || !$this->estado || !$destino->getEstado()) {
             return false;
         }
@@ -174,21 +254,19 @@ class Cuenta
             return false;
         }
 
+        [$descEmisor, $descReceptor] = $this->construirDescripcionesTransferencia(
+            $destino,
+            $descripcionPersonalizada,
+            $nombreOrigen,
+            $nombreDestino
+        );
+
         if ($this->db === null && $destino->getPdo() === null) {
             $this->saldo -= $monto;
             $destino->saldo += $monto;
 
-            $this->registrarMovimiento(
-                'transferencia',
-                $monto,
-                'Transferencia enviada a ' . $destino->getNumeroCuenta()
-            );
-
-            $destino->registrarMovimiento(
-                'transferencia',
-                $monto,
-                'Transferencia recibida desde ' . $this->numero_cuenta
-            );
+            $this->registrarMovimiento('transferencia', $monto, $descEmisor);
+            $destino->registrarMovimiento('transferencia', $monto, $descReceptor);
 
             return true;
         }
@@ -230,17 +308,9 @@ class Cuenta
                 return false;
             }
 
-            $this->registrarMovimiento(
-                'transferencia',
-                $monto,
-                'Transferencia enviada a ' . $destino->getNumeroCuenta()
-            );
-
-            $destino->registrarMovimiento(
-                'transferencia',
-                $monto,
-                'Transferencia recibida desde ' . $this->numero_cuenta
-            );
+            $fecha = date('Y-m-d H:i:s');
+            $this->insertarMovimientoEnDb($db, 'transferencia', $monto, $descEmisor, $fecha);
+            $destino->insertarMovimientoEnDb($db, 'transferencia', $monto, $descReceptor, $fecha);
 
             $db->commit();
 

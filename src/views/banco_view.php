@@ -25,7 +25,8 @@
         }
         .quick-op-card .op-title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); }
         .quick-op-card input[type="text"],
-        .quick-op-card input[type="number"] {
+        .quick-op-card input[type="number"],
+        .quick-op-card textarea {
             width: 100%;
             padding: 11px 14px;
             border-radius: 10px;
@@ -36,7 +37,13 @@
             font-family: inherit;
             box-sizing: border-box;
         }
-        .quick-op-card input:focus { outline: none; border-color: var(--accent); }
+        .quick-op-card textarea {
+            min-height: 72px;
+            resize: vertical;
+            line-height: 1.45;
+        }
+        .quick-op-card input:focus,
+        .quick-op-card textarea:focus { outline: none; border-color: var(--accent); }
         .quick-op-btn {
             padding: 11px 16px;
             border: none;
@@ -95,6 +102,25 @@
         }
         .panel-modal-dialog--success { border-color: rgba(16, 185, 129, 0.45); }
         .panel-modal-dialog--error { border-color: rgba(244, 63, 94, 0.45); }
+        .panel-modal-dialog--transfer-receipt {
+            border-color: rgba(99, 102, 241, 0.5);
+            max-width: 440px;
+        }
+        .panel-modal-dialog--transfer-receipt .panel-modal-icon {
+            background: rgba(99, 102, 241, 0.2);
+            color: var(--accent);
+        }
+        .panel-modal-dialog--transfer-receipt .panel-modal-title {
+            color: var(--text);
+        }
+        .panel-modal-subtitle {
+            font-size: 0.82rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            color: var(--accent);
+            margin: 0 0 14px;
+        }
         .panel-modal-icon {
             width: 52px;
             height: 52px;
@@ -481,13 +507,21 @@
             <div class="quick-ops-grid">
                 <form class="quick-op-card" method="post" action="index.php?route=depositar" autocomplete="off">
                     <span class="op-title">Depositar</span>
-                    <input type="text" name="monto" inputmode="decimal" placeholder="Monto a depositar ($   0.00)" required>
+                    <input type="text" name="monto" inputmode="decimal" placeholder="Monto a depositar ($0.00)" required>
                     <button type="submit" class="quick-op-btn">Depositar</button>
                 </form>
                 <form class="quick-op-card" method="post" action="index.php?route=retirar" autocomplete="off">
                     <span class="op-title">Retirar</span>
                     <input type="text" name="monto" inputmode="decimal" placeholder="Monto a retirar ($0.00)" required>
                     <button type="submit" class="quick-op-btn">Retirar</button>
+                </form>
+                <form class="quick-op-card" method="post" action="index.php?route=transferir" autocomplete="off">
+                    <span class="op-title">Transferir a otro usuario</span>
+                    <input type="text" name="numero_cuenta_destino" placeholder="Número de cuenta destino" required maxlength="64">
+                    <input type="text" name="cedula_destino" placeholder="Cédula del titular de la cuenta" required maxlength="32">
+                    <input type="text" name="monto" inputmode="decimal" placeholder="Monto a transferir ($0.00)" required>
+                    <textarea name="descripcion_personalizada" placeholder="Motivo o descripción (opcional)" maxlength="500"></textarea>
+                    <button type="submit" class="quick-op-btn">Enviar transferencia</button>
                 </form>
             </div>
         </section>
@@ -662,15 +696,27 @@
     <?php endif; ?>
 
     <?php
-    $panelModalFlash = null;
+    $modalBootstrap = null;
     if (!empty($_SESSION['panel_ok'])) {
         $rawOk = $_SESSION['panel_ok'];
         unset($_SESSION['panel_ok']);
-        if (is_array($rawOk)) {
+        if (is_array($rawOk) && ($rawOk['modal'] ?? '') === 'recibo_transferencia') {
+            $modalBootstrap = [
+                'kind' => 'recibo_transferencia',
+                'beneficiario' => (string) ($rawOk['beneficiario'] ?? ''),
+                'numero_cuenta_destino' => (string) ($rawOk['numero_cuenta_destino'] ?? ''),
+                'monto_formateado' => isset($rawOk['monto_formateado'])
+                    ? (string) $rawOk['monto_formateado']
+                    : ('$' . number_format((float) ($rawOk['monto'] ?? 0), 2)),
+                'fecha' => (string) ($rawOk['fecha'] ?? date('d/m/Y H:i:s')),
+                'descripcion_usuario' => (string) ($rawOk['descripcion_usuario'] ?? ''),
+            ];
+        } elseif (is_array($rawOk)) {
             $montoFmt = isset($rawOk['monto_formateado'])
                 ? (string) $rawOk['monto_formateado']
                 : ('$' . number_format((float) ($rawOk['monto'] ?? 0), 2));
-            $panelModalFlash = [
+            $modalBootstrap = [
+                'kind' => 'panel_modal',
                 'variant' => 'success',
                 'tipo' => (string) ($rawOk['tipo'] ?? 'Operación'),
                 'monto_formateado' => $montoFmt,
@@ -678,7 +724,8 @@
                 'descripcion' => (string) ($rawOk['descripcion'] ?? ''),
             ];
         } else {
-            $panelModalFlash = [
+            $modalBootstrap = [
+                'kind' => 'panel_modal',
                 'variant' => 'success',
                 'tipo' => 'Operación',
                 'monto_formateado' => '—',
@@ -687,18 +734,24 @@
             ];
         }
     } elseif (!empty($_SESSION['panel_error'])) {
-        $panelModalFlash = [
+        $modalBootstrap = [
+            'kind' => 'panel_modal',
             'variant' => 'error',
             'mensaje' => (string) $_SESSION['panel_error'],
         ];
         unset($_SESSION['panel_error']);
     }
+
+    $hidePanelModal = $modalBootstrap === null
+        || (($modalBootstrap['kind'] ?? '') === 'recibo_transferencia');
+    $hideTransferReceipt = $modalBootstrap === null
+        || (($modalBootstrap['kind'] ?? '') !== 'recibo_transferencia');
     ?>
 
     <div
         id="panel-modal-root"
         class="panel-modal-root"
-        <?php echo $panelModalFlash === null ? 'hidden' : ''; ?>
+        <?php echo $hidePanelModal ? 'hidden' : ''; ?>
         aria-hidden="true"
     >
         <div class="panel-modal-backdrop" id="panel-modal-backdrop"></div>
@@ -740,6 +793,51 @@
         </div>
     </div>
 
+    <div
+        id="transfer-receipt-modal-root"
+        class="panel-modal-root"
+        <?php echo $hideTransferReceipt ? 'hidden' : ''; ?>
+        aria-hidden="true"
+    >
+        <div class="panel-modal-backdrop" id="transfer-receipt-modal-backdrop"></div>
+        <div
+            class="panel-modal-dialog panel-modal-dialog--transfer-receipt"
+            id="transfer-receipt-modal-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="transfer-receipt-title"
+        >
+            <div class="panel-modal-icon" id="transfer-receipt-modal-icon" aria-hidden="true"></div>
+            <p class="panel-modal-subtitle">Recibo de transferencia</p>
+            <h2 class="panel-modal-title" id="transfer-receipt-title">Transferencia exitosa</h2>
+            <dl class="panel-modal-meta">
+                <div>
+                    <dt>Beneficiario</dt>
+                    <dd id="transfer-receipt-beneficiario"></dd>
+                </div>
+                <div>
+                    <dt>Número de cuenta destino</dt>
+                    <dd id="transfer-receipt-cuenta"></dd>
+                </div>
+                <div>
+                    <dt>Monto enviado</dt>
+                    <dd id="transfer-receipt-monto"></dd>
+                </div>
+                <div>
+                    <dt>Fecha y hora</dt>
+                    <dd id="transfer-receipt-fecha"></dd>
+                </div>
+                <div>
+                    <dt>Su descripción</dt>
+                    <dd id="transfer-receipt-motivo"></dd>
+                </div>
+            </dl>
+            <div class="panel-modal-actions">
+                <button type="button" class="panel-modal-btn" id="transfer-receipt-modal-close">Finalizar</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const socket = new WebSocket('ws://localhost:8080');
         socket.onopen = function() {
@@ -748,11 +846,68 @@
     </script>
     <script>
         (function () {
-            var payload = <?php echo json_encode($panelModalFlash, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
-            if (!payload) {
+            var boot = <?php echo json_encode($modalBootstrap, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
+            if (!boot) {
                 return;
             }
 
+            var svgCheck = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>';
+            var svgWarn = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
+            var svgTransfer = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>';
+
+            if (boot.kind === 'recibo_transferencia') {
+                var root = document.getElementById('transfer-receipt-modal-root');
+                var backdrop = document.getElementById('transfer-receipt-modal-backdrop');
+                var closeBtn = document.getElementById('transfer-receipt-modal-close');
+                var iconEl = document.getElementById('transfer-receipt-modal-icon');
+
+                function onEscKey(e) {
+                    if (e.key === 'Escape' && root.classList.contains('is-open')) {
+                        closeReceipt();
+                    }
+                }
+
+                function closeReceipt() {
+                    document.removeEventListener('keydown', onEscKey);
+                    root.classList.remove('is-open');
+                    root.setAttribute('aria-hidden', 'true');
+                    setTimeout(function () {
+                        root.setAttribute('hidden', '');
+                    }, 280);
+                }
+
+                function openReceipt() {
+                    root.removeAttribute('hidden');
+                    root.setAttribute('aria-hidden', 'false');
+                    requestAnimationFrame(function () {
+                        requestAnimationFrame(function () {
+                            root.classList.add('is-open');
+                        });
+                    });
+                }
+
+                iconEl.innerHTML = svgTransfer;
+                document.getElementById('transfer-receipt-beneficiario').textContent = boot.beneficiario || '—';
+                document.getElementById('transfer-receipt-cuenta').textContent = boot.numero_cuenta_destino || '—';
+                document.getElementById('transfer-receipt-monto').textContent = boot.monto_formateado || '—';
+                document.getElementById('transfer-receipt-fecha').textContent = boot.fecha || '—';
+                var motivo = boot.descripcion_usuario;
+                document.getElementById('transfer-receipt-motivo').textContent =
+                    motivo && String(motivo).trim() !== '' ? motivo : '—';
+
+                closeBtn.addEventListener('click', closeReceipt);
+                backdrop.addEventListener('click', closeReceipt);
+                document.addEventListener('keydown', onEscKey);
+
+                openReceipt();
+                return;
+            }
+
+            if (boot.kind !== 'panel_modal') {
+                return;
+            }
+
+            var payload = boot;
             var root = document.getElementById('panel-modal-root');
             var backdrop = document.getElementById('panel-modal-backdrop');
             var iconEl = document.getElementById('panel-modal-icon');
@@ -760,9 +915,6 @@
             var successBlock = document.getElementById('panel-modal-success-block');
             var errorBlock = document.getElementById('panel-modal-error-block');
             var closeBtn = document.getElementById('panel-modal-close');
-
-            var svgCheck = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>';
-            var svgWarn = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
 
             function onEscKey(e) {
                 if (e.key === 'Escape' && root.classList.contains('is-open')) {
@@ -794,6 +946,7 @@
             if (payload.variant === 'success') {
                 dialog.classList.add('panel-modal-dialog--success');
                 dialog.classList.remove('panel-modal-dialog--error');
+                dialog.classList.remove('panel-modal-dialog--transfer-receipt');
                 iconEl.innerHTML = svgCheck;
                 titleEl.textContent = 'Operación exitosa';
                 document.getElementById('panel-modal-tipo').textContent = payload.tipo || '';
@@ -805,6 +958,7 @@
             } else {
                 dialog.classList.add('panel-modal-dialog--error');
                 dialog.classList.remove('panel-modal-dialog--success');
+                dialog.classList.remove('panel-modal-dialog--transfer-receipt');
                 iconEl.innerHTML = svgWarn;
                 titleEl.textContent = 'Operación no realizada';
                 document.getElementById('panel-modal-mensaje').textContent = payload.mensaje || '';

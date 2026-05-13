@@ -33,6 +33,9 @@ switch ($route) {
     case 'retirar':
         (new BancoController())->procesarRetiro();
         break;
+    case 'transferir':
+        (new BancoController())->procesarTransferencia();
+        break;
     default:
         (new AuthController())->login();
         break;
