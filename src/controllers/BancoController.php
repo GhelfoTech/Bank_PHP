@@ -130,7 +130,11 @@ class BancoController
         $cuenta = $ctx['cuenta'];
 
         if ($cuenta->depositar($monto)) {
-            $_SESSION['panel_ok'] = '¡Depósito exitoso!';
+            $_SESSION['panel_ok'] = $this->panelOkPayload(
+                'Depósito',
+                $monto,
+                'Los fondos se acreditaron correctamente en su cuenta principal.'
+            );
         } else {
             $_SESSION['panel_error'] = 'No se pudo completar el depósito. Intente nuevamente.';
         }
@@ -154,7 +158,11 @@ class BancoController
         if (!$cuenta->retirar($monto)) {
             $_SESSION['panel_error'] = 'No se pudo completar el retiro. Intente nuevamente.';
         } else {
-            $_SESSION['panel_ok'] = '¡Retiro exitoso!';
+            $_SESSION['panel_ok'] = $this->panelOkPayload(
+                'Retiro',
+                $monto,
+                'El monto se debitó correctamente de su cuenta principal.'
+            );
         }
 
         header('Location: index.php?route=panel');
@@ -225,5 +233,21 @@ class BancoController
         }
 
         return $valor;
+    }
+
+    /**
+     * Datos para el modal de éxito del panel (tras redirect).
+     *
+     * @return array{tipo: string, monto: float, monto_formateado: string, fecha: string, descripcion: string}
+     */
+    private function panelOkPayload(string $tipoEtiqueta, float $monto, string $descripcion): array
+    {
+        return [
+            'tipo' => $tipoEtiqueta,
+            'monto' => $monto,
+            'monto_formateado' => '$' . number_format($monto, 2),
+            'fecha' => date('d/m/Y H:i:s'),
+            'descripcion' => $descripcion,
+        ];
     }
 }

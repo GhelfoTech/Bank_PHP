@@ -162,22 +162,3 @@ body {
   color: var(--text-muted);
 }
 
-/* Mensajes flash (panel y otras vistas) */
-.msg-ok {
-  background: rgba(16, 185, 129, 0.15);
-  border: 1px solid var(--success);
-  color: var(--success);
-  padding: 12px 16px;
-  border-radius: 8px;
-  margin-bottom: 18px;
-  font-size: 0.9rem;
-}
-.msg-err {
-  background: rgba(244, 63, 94, 0.12);
-  border: 1px solid var(--danger);
-  color: var(--danger);
-  padding: 12px 16px;
-  border-radius: 8px;
-  margin-bottom: 18px;
-  font-size: 0.9rem;
-}

@@ -126,3 +126,4 @@ En otra terminal:
 php bin/socket-server.php
 ```
 
+TRUNCATE TABLE movimientos;

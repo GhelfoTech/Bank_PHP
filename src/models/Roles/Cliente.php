@@ -33,7 +33,7 @@ class Cliente extends Usuario
     public function obtenerPermisos(): array
     {
         return [
-            'consultar_cuenta',
+            'consultar_operaciones',
             'realizar_depositos',
             'realizar_retiros',
             'realizar_transferencias'
