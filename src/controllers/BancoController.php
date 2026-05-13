@@ -122,4 +122,108 @@ class BancoController
 
         return $cuentas;
     }
+
+    public function procesarDeposito(): void
+    {
+        $ctx = $this->prepararOperacionClienteDesdePost();
+        $monto = $ctx['monto'];
+        $cuenta = $ctx['cuenta'];
+
+        if ($cuenta->depositar($monto)) {
+            $_SESSION['panel_ok'] = '¡Depósito exitoso!';
+        } else {
+            $_SESSION['panel_error'] = 'No se pudo completar el depósito. Intente nuevamente.';
+        }
+
+        header('Location: index.php?route=panel');
+        exit;
+    }
+
+    public function procesarRetiro(): void
+    {
+        $ctx = $this->prepararOperacionClienteDesdePost();
+        $monto = $ctx['monto'];
+        $cuenta = $ctx['cuenta'];
+
+        if (!$cuenta->validarSaldo($monto)) {
+            $_SESSION['panel_error'] = 'Saldo insuficiente para realizar el retiro.';
+            header('Location: index.php?route=panel');
+            exit;
+        }
+
+        if (!$cuenta->retirar($monto)) {
+            $_SESSION['panel_error'] = 'No se pudo completar el retiro. Intente nuevamente.';
+        } else {
+            $_SESSION['panel_ok'] = '¡Retiro exitoso!';
+        }
+
+        header('Location: index.php?route=panel');
+        exit;
+    }
+
+    /**
+     * @return array{monto: float, cuenta: Cuenta}
+     */
+    private function prepararOperacionClienteDesdePost(): array
+    {
+        if (empty($_SESSION['usuario_id'])) {
+            header('Location: index.php?route=login');
+            exit;
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header('Location: index.php?route=panel');
+            exit;
+        }
+
+        $monto = $this->parseMontoPositivo($_POST['monto'] ?? null);
+        if ($monto === null) {
+            $_SESSION['panel_error'] = 'Ingrese un monto válido mayor que cero.';
+            header('Location: index.php?route=panel');
+            exit;
+        }
+
+        $database = new Database();
+        $db = $database->getConnection();
+
+        $usuario = $this->cargarUsuarioLogueado($db);
+        if ($usuario->getRol() !== 'cliente') {
+            $_SESSION['panel_error'] = 'Las operaciones de depósito y retiro solo están disponibles para clientes con cuenta.';
+            header('Location: index.php?route=panel');
+            exit;
+        }
+
+        $cuentas = $this->cargarCuentasDeUsuario($db, $usuario->getId());
+        if ($cuentas === []) {
+            $_SESSION['panel_error'] = 'No tiene cuentas activas para operar.';
+            header('Location: index.php?route=panel');
+            exit;
+        }
+
+        return [
+            'monto' => $monto,
+            'cuenta' => $cuentas[0],
+        ];
+    }
+
+    private function parseMontoPositivo(mixed $raw): ?float
+    {
+        if (!is_string($raw)) {
+            return null;
+        }
+
+        $trim = trim($raw);
+        if ($trim === '') {
+            return null;
+        }
+
+        $normalized = str_replace(',', '.', $trim);
+        $valor = filter_var($normalized, FILTER_VALIDATE_FLOAT);
+
+        if ($valor === false || $valor <= 0 || !is_finite($valor)) {
+            return null;
+        }
+
+        return $valor;
+    }
 }

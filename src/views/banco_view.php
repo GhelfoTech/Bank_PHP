@@ -6,6 +6,51 @@
     <title>Bank Josstor</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="./assets/css/styles.css">
+    <style>
+        .quick-ops-section { margin-bottom: 40px; }
+        .quick-ops-section h3 { font-size: 1.2rem; margin-bottom: 18px; font-weight: 600; }
+        .quick-ops-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+        }
+        .quick-op-card {
+            background: var(--card);
+            border: 1px solid #334155;
+            border-radius: 16px;
+            padding: 22px 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+        .quick-op-card .op-title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); }
+        .quick-op-card input[type="text"],
+        .quick-op-card input[type="number"] {
+            width: 100%;
+            padding: 11px 14px;
+            border-radius: 10px;
+            border: 1px solid #334155;
+            background: #0f172a;
+            color: var(--text);
+            font-size: 0.95rem;
+            font-family: inherit;
+            box-sizing: border-box;
+        }
+        .quick-op-card input:focus { outline: none; border-color: var(--accent); }
+        .quick-op-btn {
+            padding: 11px 16px;
+            border: none;
+            border-radius: 10px;
+            background: var(--accent);
+            color: var(--white);
+            font-weight: 600;
+            font-size: 0.9rem;
+            font-family: inherit;
+            cursor: pointer;
+            align-self: flex-start;
+        }
+        .quick-op-btn:hover { filter: brightness(1.08); }
+    </style>
 </head>
 <body>
     <aside class="sidebar">
@@ -50,6 +95,15 @@
             </div>
         </header>
 
+        <?php if (!empty($_SESSION['panel_ok'])): ?>
+            <div class="msg-ok"><?php echo htmlspecialchars((string) $_SESSION['panel_ok'], ENT_QUOTES, 'UTF-8'); ?></div>
+            <?php unset($_SESSION['panel_ok']); ?>
+        <?php endif; ?>
+        <?php if (!empty($_SESSION['panel_error'])): ?>
+            <div class="msg-err"><?php echo htmlspecialchars((string) $_SESSION['panel_error'], ENT_QUOTES, 'UTF-8'); ?></div>
+            <?php unset($_SESSION['panel_error']); ?>
+        <?php endif; ?>
+
         <?php if ($cuentaOrigen !== null): ?>
         <section class="accounts-grid">
             <div class="bank-card">
@@ -87,6 +141,27 @@
         <?php else: ?>
         <section class="accounts-grid" style="margin-bottom: 30px;">
             <p style="color: var(--text-muted);">No hay cuentas bancarias para mostrar en este usuario (por ejemplo, un administrador sin cuentas, o un cliente sin registros en la tabla cuentas).</p>
+        </section>
+        <?php endif; ?>
+
+        <?php if ($cuentaOrigen !== null): ?>
+        <section class="quick-ops-section" aria-label="Operaciones rápidas">
+            <h3>Operaciones rápidas</h3>
+            <p style="color: var(--text-muted); font-size: 0.9rem; margin: -8px 0 18px;">
+                Cuenta: <strong><?php echo htmlspecialchars($cuentaOrigen->getNumeroCuenta(), ENT_QUOTES, 'UTF-8'); ?></strong>
+            </p>
+            <div class="quick-ops-grid">
+                <form class="quick-op-card" method="post" action="index.php?route=depositar" autocomplete="off">
+                    <span class="op-title">Depositar</span>
+                    <input type="text" name="monto" inputmode="decimal" placeholder="Monto a depositar (0.00)" required>
+                    <button type="submit" class="quick-op-btn">Depositar</button>
+                </form>
+                <form class="quick-op-card" method="post" action="index.php?route=retirar" autocomplete="off">
+                    <span class="op-title">Retirar</span>
+                    <input type="text" name="monto" inputmode="decimal" placeholder="Monto a retirar (0.00)" required>
+                    <button type="submit" class="quick-op-btn">Retirar</button>
+                </form>
+            </div>
         </section>
         <?php endif; ?>
 

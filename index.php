@@ -27,6 +27,12 @@ switch ($route) {
     case 'panel':
         (new BancoController())->mostrarPanel();
         break;
+    case 'depositar':
+        (new BancoController())->procesarDeposito();
+        break;
+    case 'retirar':
+        (new BancoController())->procesarRetiro();
+        break;
     default:
         (new AuthController())->login();
         break;

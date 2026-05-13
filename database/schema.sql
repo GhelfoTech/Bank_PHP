@@ -30,12 +30,15 @@ CREATE TABLE IF NOT EXISTS cuentas (
 CREATE TABLE IF NOT EXISTS movimientos (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     cuenta_id INT UNSIGNED NOT NULL,
+    usuario_id INT UNSIGNED NOT NULL,
     tipo VARCHAR(32) NOT NULL,
     monto DECIMAL(12, 2) NOT NULL,
     fecha DATETIME NOT NULL,
     descripcion VARCHAR(255) NOT NULL,
     CONSTRAINT fk_movimientos_cuenta FOREIGN KEY (cuenta_id) REFERENCES cuentas (id)
-        ON UPDATE CASCADE ON DELETE CASCADE
+        ON UPDATE CASCADE ON DELETE CASCADE,
+    CONSTRAINT fk_movimientos_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios (id)
+        ON UPDATE CASCADE ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
 -- Datos iniciales (panel de demostración).

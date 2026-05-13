@@ -4,7 +4,6 @@ namespace App\Models;
 
 use App\Models\Movimiento;
 use PDO;
-use PDOException;
 use Throwable;
 
 /**
@@ -79,8 +78,11 @@ class Cuenta
             return true;
         }
 
+        $db = $this->db;
+        $db->beginTransaction();
+
         try {
-            $stmt = $this->db->prepare(
+            $stmt = $db->prepare(
                 'UPDATE cuentas SET saldo = saldo + :monto WHERE id = :id AND estado = 1'
             );
             $stmt->execute([
@@ -89,14 +91,21 @@ class Cuenta
             ]);
 
             if ($stmt->rowCount() !== 1) {
+                $db->rollBack();
+
                 return false;
             }
 
+            $this->insertarMovimientoEnDb($db, 'deposito', $monto, 'Deposito en cuenta');
+            $db->commit();
             $this->refrescarSaldoDesdeDb();
-            $this->registrarMovimiento('deposito', $monto, 'Deposito en cuenta');
 
             return true;
-        } catch (PDOException) {
+        } catch (Throwable) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+
             return false;
         }
     }
@@ -117,8 +126,11 @@ class Cuenta
             return true;
         }
 
+        $db = $this->db;
+        $db->beginTransaction();
+
         try {
-            $stmt = $this->db->prepare(
+            $stmt = $db->prepare(
                 'UPDATE cuentas SET saldo = saldo - :monto WHERE id = :id AND estado = 1 AND saldo >= :monto2'
             );
             $stmt->execute([
@@ -128,14 +140,21 @@ class Cuenta
             ]);
 
             if ($stmt->rowCount() !== 1) {
+                $db->rollBack();
+
                 return false;
             }
 
+            $this->insertarMovimientoEnDb($db, 'retiro', $monto, 'Retiro en cuenta');
+            $db->commit();
             $this->refrescarSaldoDesdeDb();
-            $this->registrarMovimiento('retiro', $monto, 'Retiro en cuenta');
 
             return true;
-        } catch (PDOException) {
+        } catch (Throwable) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+
             return false;
         }
     }
@@ -260,11 +279,27 @@ class Cuenta
         }
 
         $fecha = date('Y-m-d H:i:s');
-        $stmt = $this->db->prepare(
-            'INSERT INTO movimientos (cuenta_id, tipo, monto, fecha, descripcion) VALUES (:cuenta_id, :tipo, :monto, :fecha, :descripcion)'
+        $this->insertarMovimientoEnDb($this->db, $tipo, $monto, $descripcion, $fecha);
+    }
+
+    /**
+     * Inserta una fila en movimientos (debe ejecutarse dentro de una transaccion activa cuando aplique).
+     */
+    private function insertarMovimientoEnDb(
+        PDO $db,
+        string $tipo,
+        float $monto,
+        string $descripcion,
+        ?string $fecha = null
+    ): void {
+        $fecha = $fecha ?? date('Y-m-d H:i:s');
+        $stmt = $db->prepare(
+            'INSERT INTO movimientos (cuenta_id, usuario_id, tipo, monto, fecha, descripcion)
+             VALUES (:cuenta_id, :usuario_id, :tipo, :monto, :fecha, :descripcion)'
         );
         $stmt->execute([
             'cuenta_id' => $this->id,
+            'usuario_id' => $this->usuario_id,
             'tipo' => $tipo,
             'monto' => (string) $monto,
             'fecha' => $fecha,
