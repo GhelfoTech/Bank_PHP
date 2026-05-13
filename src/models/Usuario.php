@@ -17,6 +17,7 @@ abstract class Usuario
     protected string $password;
     protected string $rol;
     protected bool $estado;
+    protected ?\PDO $db = null;
 
     /**
      * Inicializa un usuario con sus datos principales.
@@ -28,7 +29,8 @@ abstract class Usuario
         string $email,
         string $password,
         string $rol,
-        bool $estado = true
+        bool $estado = true,
+        ?\PDO $db = null
     ) {
         $this->id = $id;
         $this->cedula = $cedula;
@@ -37,6 +39,7 @@ abstract class Usuario
         $this->password = $password;
         $this->rol = $rol;
         $this->estado = $estado;
+        $this->db = $db;
     }
 
     /**

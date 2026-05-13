@@ -21,9 +21,10 @@ class Cliente extends Usuario
         string $nombres,
         string $email,
         string $password,
-        bool $estado = true
+        bool $estado = true,
+        ?\PDO $db = null
     ) {
-        parent::__construct($id, $cedula, $nombres, $email, $password, 'cliente', $estado);
+        parent::__construct($id, $cedula, $nombres, $email, $password, 'cliente', $estado, $db);
     }
 
     /**

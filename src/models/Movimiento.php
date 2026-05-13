@@ -16,6 +16,7 @@ class Movimiento
     private float $monto;
     private string $fecha;
     private string $descripcion;
+    private ?\PDO $db = null;
 
     /**
      * Inicializa un movimiento con su informacion principal.
@@ -26,7 +27,8 @@ class Movimiento
         string $tipo,
         float $monto,
         string $fecha,
-        string $descripcion
+        string $descripcion,
+        ?\PDO $db = null
     ) {
         $this->id = $id;
         $this->cuenta_id = $cuenta_id;
@@ -34,6 +36,7 @@ class Movimiento
         $this->monto = $monto;
         $this->fecha = $fecha;
         $this->descripcion = $descripcion;
+        $this->db = $db;
     }
 
     /**
