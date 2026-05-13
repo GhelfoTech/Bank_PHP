@@ -168,6 +168,225 @@
         }
         .panel-modal-btn:hover { filter: brightness(1.08); }
         .panel-modal-root[hidden] { display: none !important; }
+
+        /* Modal historial completo (reutiliza patrón panel-modal) */
+        .history-modal-root {
+            position: fixed;
+            inset: 0;
+            z-index: 2100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            transition: opacity 0.28s ease, visibility 0.28s ease;
+        }
+        .history-modal-root.is-open {
+            opacity: 1;
+            visibility: visible;
+            pointer-events: auto;
+        }
+        .history-modal-backdrop {
+            position: absolute;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.72);
+            backdrop-filter: blur(6px);
+        }
+        .history-modal-dialog {
+            position: relative;
+            width: 100%;
+            max-width: min(920px, 96vw);
+            max-height: min(86vh, 720px);
+            display: flex;
+            flex-direction: column;
+            background: var(--card);
+            border: 1px solid #334155;
+            border-radius: 20px;
+            box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
+            transform: translateY(16px) scale(0.98);
+            opacity: 0;
+            transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.28s ease;
+        }
+        .history-modal-root.is-open .history-modal-dialog {
+            transform: translateY(0) scale(1);
+            opacity: 1;
+        }
+        .history-modal-root[hidden] { display: none !important; }
+        .history-modal-header {
+            flex-shrink: 0;
+            padding: 22px 24px 18px;
+            border-bottom: 1px solid rgba(51, 65, 85, 0.85);
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 16px;
+        }
+        .history-modal-header-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+        .history-modal-header h2 {
+            margin: 0;
+            font-size: 1.25rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+        .history-modal-filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+        }
+        .history-filter-btn {
+            padding: 8px 14px;
+            border-radius: 10px;
+            border: 1px solid #334155;
+            background: #0f172a;
+            color: var(--text-muted);
+            font-size: 0.82rem;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            transition: border-color 0.2s, color 0.2s, background 0.2s;
+        }
+        .history-filter-btn:hover {
+            color: var(--text);
+            border-color: #475569;
+        }
+        .history-filter-btn.is-active {
+            background: rgba(99, 102, 241, 0.2);
+            border-color: var(--accent);
+            color: var(--text);
+        }
+        .history-modal-close {
+            flex-shrink: 0;
+            width: 40px;
+            height: 40px;
+            border: none;
+            border-radius: 12px;
+            background: rgba(15, 23, 42, 0.6);
+            color: var(--text-muted);
+            font-size: 1.35rem;
+            line-height: 1;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: inherit;
+        }
+        .history-modal-close:hover {
+            color: var(--text);
+            background: rgba(15, 23, 42, 0.95);
+        }
+        .history-modal-body {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            padding: 16px 20px 22px;
+        }
+        .history-modal-table-head {
+            display: grid;
+            grid-template-columns: minmax(130px, 1fr) minmax(100px, 0.85fr) minmax(160px, 2fr) minmax(90px, 0.75fr);
+            gap: 12px;
+            padding: 10px 14px;
+            font-size: 0.68rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            color: var(--text-muted);
+            border-bottom: 1px solid rgba(51, 65, 85, 0.6);
+            margin-bottom: 8px;
+        }
+        .history-modal-row {
+            display: grid;
+            grid-template-columns: minmax(130px, 1fr) minmax(100px, 0.85fr) minmax(160px, 2fr) minmax(90px, 0.75fr);
+            gap: 12px;
+            align-items: center;
+            padding: 14px;
+            background: rgba(15, 23, 42, 0.45);
+            border-radius: 14px;
+            border: 1px solid rgba(51, 65, 85, 0.5);
+            margin-bottom: 8px;
+        }
+        .history-modal-row[hidden] { display: none !important; }
+        .history-modal-row-fecha {
+            font-size: 0.82rem;
+            color: var(--text-muted);
+            line-height: 1.35;
+        }
+        .history-modal-row-tipo {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+            font-size: 0.88rem;
+        }
+        .history-modal-row-icon {
+            width: 34px;
+            height: 34px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.95rem;
+            flex-shrink: 0;
+        }
+        .history-modal-row-desc {
+            font-size: 0.85rem;
+            color: var(--text);
+            line-height: 1.45;
+            word-break: break-word;
+        }
+        .history-modal-row-monto {
+            font-weight: 700;
+            font-size: 0.95rem;
+            text-align: right;
+            white-space: nowrap;
+        }
+        .history-monto--suma { color: var(--success); }
+        .history-monto--resta { color: var(--danger); }
+        .history-monto--neutro { color: var(--text-muted); }
+        .btn-consultar-operaciones {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 20px;
+            padding: 14px 24px;
+            border: none;
+            border-radius: 14px;
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.95) 0%, rgba(79, 70, 229, 0.95) 100%);
+            color: var(--white);
+            font-weight: 700;
+            font-size: 0.92rem;
+            font-family: inherit;
+            cursor: pointer;
+            box-shadow: 0 10px 28px rgba(99, 102, 241, 0.28);
+            transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+        }
+        .btn-consultar-operaciones:hover {
+            filter: brightness(1.06);
+            box-shadow: 0 14px 36px rgba(99, 102, 241, 0.38);
+            transform: translateY(-1px);
+        }
+        .btn-consultar-operaciones svg {
+            width: 18px;
+            height: 18px;
+            flex-shrink: 0;
+        }
+        @media (max-width: 640px) {
+            .history-modal-table-head { display: none; }
+            .history-modal-row {
+                grid-template-columns: 1fr;
+                gap: 10px;
+            }
+            .history-modal-row-monto { text-align: left; }
+        }
     </style>
 </head>
 <body>
@@ -274,13 +493,14 @@
         </section>
         <?php endif; ?>
 
+        <?php $historialVistaPrevia = array_slice($historial, 0, 3); ?>
         <section class="activity-log">
             <h3 style="margin-bottom: 25px; font-size: 1.2rem;">Trazabilidad de Movimientos</h3>
 
             <?php if (empty($historial)): ?>
-            <p style="color: var(--text-muted); margin: 0;">No hay actividad reciente en esta cuenta</p>
+            <p style="color: var(--text-muted); margin: 0;">No se han registrado movimientos en esta cuenta.</p>
             <?php else: ?>
-                <?php foreach ($historial as $mov): ?>
+                <?php foreach ($historialVistaPrevia as $mov): ?>
                     <?php
                     $tipoRaw = $mov->getTipo();
                     $tipoEtiqueta = match ($tipoRaw) {
@@ -333,9 +553,113 @@
                 </div>
             </div>
                 <?php endforeach; ?>
+                <button type="button" class="btn-consultar-operaciones" id="btn-consultar-operaciones" aria-haspopup="dialog" aria-controls="history-modal-root">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                    Consultar Operaciones
+                </button>
             <?php endif; ?>
         </section>
     </main>
+
+    <?php if (!empty($historial)): ?>
+    <div
+        id="history-modal-root"
+        class="history-modal-root"
+        hidden
+        aria-hidden="true"
+    >
+        <div class="history-modal-backdrop" id="history-modal-backdrop"></div>
+        <div
+            class="history-modal-dialog"
+            id="history-modal-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="history-modal-title"
+        >
+            <div class="history-modal-header">
+                <div class="history-modal-header-top">
+                    <h2 id="history-modal-title">Historial de operaciones</h2>
+                    <button type="button" class="history-modal-close" id="history-modal-close" aria-label="Cerrar historial">&times;</button>
+                </div>
+                <div class="history-modal-filters" role="group" aria-label="Filtrar movimientos">
+                    <button type="button" class="history-filter-btn is-active" data-filter="todos">Todos</button>
+                    <button type="button" class="history-filter-btn" data-filter="deposito">Depósitos</button>
+                    <button type="button" class="history-filter-btn" data-filter="retiro">Retiros</button>
+                    <button type="button" class="history-filter-btn" data-filter="transferencia">Transferencias</button>
+                </div>
+            </div>
+            <div class="history-modal-body" id="history-modal-body">
+                <div class="history-modal-table-head" aria-hidden="true">
+                    <span>Fecha / hora</span>
+                    <span>Tipo</span>
+                    <span>Descripción</span>
+                    <span>Monto</span>
+                </div>
+                <?php foreach ($historial as $mov): ?>
+                    <?php
+                    $tipoRaw = $mov->getTipo();
+                    $tipoEtiqueta = match ($tipoRaw) {
+                        'deposito' => 'Depósito',
+                        'retiro' => 'Retiro',
+                        'transferencia' => 'Transferencia',
+                        default => ucfirst($tipoRaw),
+                    };
+                    $icono = match ($tipoRaw) {
+                        'deposito' => '+',
+                        'retiro' => '−',
+                        default => '⇄',
+                    };
+                    $bgIcono = match ($tipoRaw) {
+                        'deposito' => 'rgba(16, 185, 129, 0.2)',
+                        'retiro' => 'rgba(239, 68, 68, 0.2)',
+                        default => 'rgba(148, 163, 184, 0.2)',
+                    };
+                    $colorIcono = match ($tipoRaw) {
+                        'deposito' => 'var(--success)',
+                        'retiro' => 'var(--danger)',
+                        default => 'var(--text-muted)',
+                    };
+                    $descLower = strtolower($mov->getDescripcion());
+                    if ($tipoRaw === 'deposito') {
+                        $montoClass = 'history-monto--suma';
+                        $prefijoMonto = '+';
+                    } elseif ($tipoRaw === 'retiro') {
+                        $montoClass = 'history-monto--resta';
+                        $prefijoMonto = '−';
+                    } elseif ($tipoRaw === 'transferencia') {
+                        if (str_contains($descLower, 'recibida')) {
+                            $montoClass = 'history-monto--suma';
+                            $prefijoMonto = '+';
+                        } elseif (str_contains($descLower, 'enviada')) {
+                            $montoClass = 'history-monto--resta';
+                            $prefijoMonto = '−';
+                        } else {
+                            $montoClass = 'history-monto--neutro';
+                            $prefijoMonto = '';
+                        }
+                    } else {
+                        $montoClass = 'history-monto--neutro';
+                        $prefijoMonto = '';
+                    }
+                    $montoAbs = number_format(abs($mov->getMonto()), 2);
+                    $tipoData = htmlspecialchars($tipoRaw, ENT_QUOTES, 'UTF-8');
+                    ?>
+                <div class="history-modal-row" data-tipo="<?php echo $tipoData; ?>">
+                    <div class="history-modal-row-fecha"><?php echo htmlspecialchars($mov->getFecha(), ENT_QUOTES, 'UTF-8'); ?></div>
+                    <div class="history-modal-row-tipo">
+                        <span class="history-modal-row-icon" style="background: <?php echo $bgIcono; ?>; color: <?php echo $colorIcono; ?>;"><?php echo htmlspecialchars($icono, ENT_QUOTES, 'UTF-8'); ?></span>
+                        <span><?php echo htmlspecialchars($tipoEtiqueta, ENT_QUOTES, 'UTF-8'); ?></span>
+                    </div>
+                    <div class="history-modal-row-desc"><?php echo htmlspecialchars($mov->getDescripcion(), ENT_QUOTES, 'UTF-8'); ?></div>
+                    <div class="history-modal-row-monto <?php echo htmlspecialchars($montoClass, ENT_QUOTES, 'UTF-8'); ?>">
+                        <?php echo $prefijoMonto !== '' ? htmlspecialchars($prefijoMonto, ENT_QUOTES, 'UTF-8') : ''; ?>$<?php echo $montoAbs; ?>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <?php
     $panelModalFlash = null;
@@ -493,6 +817,75 @@
             document.addEventListener('keydown', onEscKey);
 
             openModal();
+        })();
+    </script>
+    <script>
+        (function () {
+            var openBtn = document.getElementById('btn-consultar-operaciones');
+            var root = document.getElementById('history-modal-root');
+            if (!openBtn || !root) {
+                return;
+            }
+
+            var backdrop = document.getElementById('history-modal-backdrop');
+            var closeBtn = document.getElementById('history-modal-close');
+            var filterBtns = root.querySelectorAll('.history-filter-btn');
+            var rows = root.querySelectorAll('.history-modal-row');
+            var TRANSITION_MS = 280;
+
+            function applyFilter(filter) {
+                filterBtns.forEach(function (b) {
+                    b.classList.toggle('is-active', b.getAttribute('data-filter') === filter);
+                });
+                rows.forEach(function (row) {
+                    var tipo = row.getAttribute('data-tipo') || '';
+                    var show = filter === 'todos' || tipo === filter;
+                    row.hidden = !show;
+                });
+            }
+
+            function onHistoryEsc(e) {
+                if (e.key === 'Escape' && root.classList.contains('is-open')) {
+                    e.stopPropagation();
+                    closeHistoryModal();
+                }
+            }
+
+            function closeHistoryModal() {
+                document.removeEventListener('keydown', onHistoryEsc, true);
+                root.classList.remove('is-open');
+                root.setAttribute('aria-hidden', 'true');
+                setTimeout(function () {
+                    root.setAttribute('hidden', '');
+                }, TRANSITION_MS);
+                openBtn.focus();
+            }
+
+            function openHistoryModal() {
+                applyFilter('todos');
+                root.removeAttribute('hidden');
+                root.setAttribute('aria-hidden', 'false');
+                document.addEventListener('keydown', onHistoryEsc, true);
+                requestAnimationFrame(function () {
+                    requestAnimationFrame(function () {
+                        root.classList.add('is-open');
+                    });
+                });
+                closeBtn.focus();
+            }
+
+            openBtn.addEventListener('click', openHistoryModal);
+            closeBtn.addEventListener('click', closeHistoryModal);
+            backdrop.addEventListener('click', closeHistoryModal);
+
+            filterBtns.forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    var f = btn.getAttribute('data-filter');
+                    if (f) {
+                        applyFilter(f);
+                    }
+                });
+            });
         })();
     </script>
 </body>
