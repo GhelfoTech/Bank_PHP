@@ -13,8 +13,18 @@
         .auth-card p.sub { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 24px; }
         .auth-field { margin-bottom: 16px; }
         .auth-field label { display: block; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 6px; }
-        .auth-field input, .auth-field select { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: var(--text); font-size: 0.95rem; }
+        .auth-field input, .auth-field select { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: var(--text); font-size: 0.95rem; box-sizing: border-box; }
         .auth-field input:focus, .auth-field select:focus { outline: none; border-color: var(--accent); }
+        .auth-password-wrap { position: relative; width: 100%; }
+        .auth-password-wrap input { padding-right: 4.25rem; }
+        .auth-password-toggle {
+            position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+            border: none; background: transparent; color: var(--text-muted);
+            font-size: 0.75rem; font-weight: 600; font-family: inherit; cursor: pointer;
+            padding: 6px 8px; border-radius: 6px; line-height: 1.2;
+        }
+        .auth-password-toggle:hover { color: var(--accent); background: rgba(148, 163, 184, 0.12); }
+        .auth-password-toggle:focus { outline: none; color: var(--accent); box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.35); }
         .auth-btn { width: 100%; padding: 12px; border: none; border-radius: 10px; background: var(--accent); color: var(--white); font-weight: 600; cursor: pointer; margin-top: 8px; }
         .auth-btn:hover { filter: brightness(1.08); }
         .auth-links { margin-top: 20px; text-align: center; font-size: 0.9rem; color: var(--text-muted); }
@@ -28,7 +38,6 @@
     <div class="auth-wrap">
         <div class="auth-card">
             <h1>Crear cuenta</h1>
-            <p class="sub">Los clientes reciben automáticamente una cuenta con saldo 0.</p>
 
             <?php if ($error !== null): ?>
                 <div class="msg-err"><?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?></div>
@@ -38,27 +47,34 @@
                 <div class="auth-field">
                     <label for="cedula">Cédula</label>
                     <input type="text" id="cedula" name="cedula" required maxlength="20"
+                           placeholder="V-12345678"
                            value="<?php echo htmlspecialchars((string) ($_POST['cedula'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
                 </div>
                 <div class="auth-field">
                     <label for="nombres">Nombre completo</label>
                     <input type="text" id="nombres" name="nombres" required maxlength="120"
+                           placeholder="Juan Pérez"
                            value="<?php echo htmlspecialchars((string) ($_POST['nombres'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
                 </div>
                 <div class="auth-field">
                     <label for="email">Correo electrónico</label>
                     <input type="email" id="email" name="email" required maxlength="120"
+                           placeholder="ejemplocorreo@gmail.com"
                            value="<?php echo htmlspecialchars((string) ($_POST['email'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
                 </div>
                 <div class="auth-field">
                     <label for="password">Contraseña</label>
-                    <input type="password" id="password" name="password" required minlength="6" autocomplete="new-password">
-                    <p class="hint">Mínimo 6 caracteres. Se almacena de forma segura con password_hash.</p>
+                    <div class="auth-password-wrap">
+                        <input type="password" id="password" name="password" required minlength="6" autocomplete="new-password"
+                               placeholder="••••••••">
+                        <button type="button" class="auth-password-toggle" data-target="password" aria-pressed="false" aria-label="Mostrar contraseña">Ver</button>
+                    </div>
+                    <p class="hint">Mínimo 6 caracteres.</p>
                 </div>
                 <div class="auth-field">
                     <label for="rol">Rol</label>
-                    <select id="rol" name="rol" required>
-                        <option value="">— Seleccione —</option>
+                    <select id="rol" name="rol" required title="Seleccione su rol">
+                        <option value="" hidden disabled <?php echo empty($_POST['rol'] ?? '') ? 'selected' : ''; ?>>Seleccione su rol</option>
                         <option value="cliente" <?php echo (($_POST['rol'] ?? '') === 'cliente') ? 'selected' : ''; ?>>Cliente</option>
                         <option value="administrador" <?php echo (($_POST['rol'] ?? '') === 'administrador') ? 'selected' : ''; ?>>Administrador</option>
                     </select>
@@ -71,5 +87,21 @@
             </div>
         </div>
     </div>
+    <script>
+        (function () {
+            document.querySelectorAll('.auth-password-toggle').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    var id = btn.getAttribute('data-target');
+                    var input = id ? document.getElementById(id) : null;
+                    if (!input) return;
+                    var visible = input.getAttribute('type') === 'text';
+                    input.setAttribute('type', visible ? 'password' : 'text');
+                    btn.setAttribute('aria-pressed', visible ? 'false' : 'true');
+                    btn.setAttribute('aria-label', visible ? 'Mostrar contraseña' : 'Ocultar contraseña');
+                    btn.textContent = visible ? 'Ver' : 'Ocultar';
+                });
+            });
+        })();
+    </script>
 </body>
 </html>
