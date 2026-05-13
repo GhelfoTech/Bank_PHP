@@ -28,10 +28,7 @@ class BancoController
 
         $cuentaOrigen = null;
         $cuentaDestino = null;
-        $depositoExitoso = false;
-        $transferenciaExitosa = false;
-        $depositoMensaje = '';
-        $transferenciaMensaje = '';
+        $historial = [];
 
         if ($usuario->getRol() === 'cliente') {
             $cuentas = $this->cargarCuentasDeUsuario($db, $usuario->getId());
@@ -39,30 +36,11 @@ class BancoController
             if (count($cuentas) >= 2) {
                 $cuentaOrigen = $cuentas[0];
                 $cuentaDestino = $cuentas[1];
-                $depositoExitoso = $cuentaOrigen->depositar(150.00);
-                $transferenciaExitosa = $cuentaOrigen->transferir($cuentaDestino, 500.00);
             } elseif (count($cuentas) === 1) {
                 $cuentaOrigen = $cuentas[0];
-                $depositoExitoso = $cuentaOrigen->depositar(150.00);
-                $transferenciaExitosa = false;
             }
 
-            $depositoEstado = $depositoExitoso ? 'Exitoso' : 'Fallido';
-            $depositoMensaje = $cuentaOrigen !== null
-                ? "Operación de depósito: {$depositoEstado}"
-                : 'Sin cuentas asignadas: no se ejecutó depósito de demostración.';
-
-            if ($cuentaOrigen !== null && $cuentaDestino !== null) {
-                $transferenciaEstado = $transferenciaExitosa ? 'Exitoso' : 'Fallido';
-                $transferenciaMensaje = "Operación de transferencia: {$transferenciaEstado}";
-            } elseif ($cuentaOrigen !== null) {
-                $transferenciaMensaje = 'Transferencia no ejecutada: se requieren al menos dos cuentas activas.';
-            } else {
-                $transferenciaMensaje = 'Sin cuentas asignadas.';
-            }
-        } else {
-            $depositoMensaje = 'Los administradores no tienen cuentas vinculadas en este panel; no se ejecutaron depósitos ni transferencias de demostración.';
-            $transferenciaMensaje = $depositoMensaje;
+            $historial = Cuenta::obtenerMovimientosPorUsuarioId($db, $usuario->getId());
         }
 
         require_once __DIR__ . '/../views/banco_view.php';

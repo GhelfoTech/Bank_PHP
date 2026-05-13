@@ -93,31 +93,63 @@
         <section class="activity-log">
             <h3 style="margin-bottom: 25px; font-size: 1.2rem;">Trazabilidad de Movimientos</h3>
 
-            <?php if ($cuentaOrigen !== null): ?>
-            <div class="log-entry success">
-                <div class="log-icon" style="background: rgba(16, 185, 129, 0.2); color: var(--success); width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold;">+</div>
+            <?php if (empty($historial)): ?>
+            <p style="color: var(--text-muted); margin: 0;">No hay actividad reciente en esta cuenta</p>
+            <?php else: ?>
+                <?php foreach ($historial as $mov): ?>
+                    <?php
+                    $tipoRaw = $mov->getTipo();
+                    $tipoEtiqueta = match ($tipoRaw) {
+                        'deposito' => 'Depósito',
+                        'retiro' => 'Retiro',
+                        'transferencia' => 'Transferencia',
+                        default => ucfirst($tipoRaw),
+                    };
+                    $claseLog = match ($tipoRaw) {
+                        'deposito' => 'success',
+                        'retiro' => 'error',
+                        default => '',
+                    };
+                    $icono = match ($tipoRaw) {
+                        'deposito' => '+',
+                        'retiro' => '−',
+                        default => '⇄',
+                    };
+                    $bgIcono = match ($tipoRaw) {
+                        'deposito' => 'rgba(16, 185, 129, 0.2)',
+                        'retiro' => 'rgba(239, 68, 68, 0.2)',
+                        default => 'rgba(148, 163, 184, 0.2)',
+                    };
+                    $colorIcono = match ($tipoRaw) {
+                        'deposito' => 'var(--success)',
+                        'retiro' => 'var(--danger)',
+                        default => 'var(--text-muted)',
+                    };
+                    $prefijoMonto = match ($tipoRaw) {
+                        'deposito' => '+',
+                        'retiro' => '−',
+                        default => '',
+                    };
+                    $colorMonto = match ($tipoRaw) {
+                        'deposito' => 'var(--success)',
+                        'retiro' => 'var(--danger)',
+                        default => 'var(--text-muted)',
+                    };
+                    $montoAbs = number_format(abs($mov->getMonto()), 2);
+                    ?>
+            <div class="log-entry <?php echo htmlspecialchars($claseLog); ?>">
+                <div class="log-icon" style="background: <?php echo $bgIcono; ?>; color: <?php echo $colorIcono; ?>; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold;"><?php echo htmlspecialchars($icono); ?></div>
                 <div class="log-info">
-                    <b>Depósito</b>
-                    <span><?php echo htmlspecialchars($depositoMensaje); ?></span>
+                    <b><?php echo htmlspecialchars($tipoEtiqueta); ?></b>
+                    <span style="display: block; margin-top: 4px; font-size: 0.85rem; color: var(--text-muted);"><?php echo htmlspecialchars($mov->getFecha()); ?></span>
+                    <span><?php echo htmlspecialchars($mov->getDescripcion()); ?></span>
                 </div>
-                <div style="font-weight: 700; font-size: 1.1rem; color: var(--success)">+$150.00</div>
+                <div style="font-weight: 700; font-size: 1.1rem; color: <?php echo $colorMonto; ?>; white-space: nowrap;">
+                    <?php echo $prefijoMonto !== '' ? htmlspecialchars($prefijoMonto) : ''; ?>$<?php echo $montoAbs; ?>
+                </div>
             </div>
+                <?php endforeach; ?>
             <?php endif; ?>
-
-            <div class="log-entry <?php echo ($cuentaDestino !== null && $transferenciaExitosa) ? 'success' : (($cuentaDestino !== null) ? 'error' : ''); ?>">
-                <div class="log-icon" style="background: <?php echo ($cuentaDestino !== null && $transferenciaExitosa) ? 'rgba(16, 185, 129, 0.2)' : 'rgba(148, 163, 184, 0.2)'; ?>; color: <?php echo ($cuentaDestino !== null && $transferenciaExitosa) ? 'var(--success)' : 'var(--text-muted)'; ?>; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold;">
-                    <?php echo ($cuentaDestino !== null) ? ($transferenciaExitosa ? '⇄' : '✕') : '—'; ?>
-                </div>
-                <div class="log-info">
-                    <b>Transferencia</b>
-                    <span><?php echo htmlspecialchars($transferenciaMensaje); ?></span>
-                </div>
-                <?php if ($cuentaDestino !== null): ?>
-                <div style="font-weight: 700; font-size: 1.1rem; color: <?php echo $transferenciaExitosa ? 'var(--success)' : 'var(--danger)'; ?>">
-                    $500.00
-                </div>
-                <?php endif; ?>
-            </div>
         </section>
     </main>
 

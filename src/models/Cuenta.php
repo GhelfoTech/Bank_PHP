@@ -401,4 +401,36 @@ class Cuenta
 
         return $lista;
     }
+
+    /**
+     * Obtiene todos los movimientos de las cuentas activas de un usuario.
+     *
+     * @return Movimiento[]
+     */
+    public static function obtenerMovimientosPorUsuarioId(PDO $db, int $usuarioId): array
+    {
+        $stmt = $db->prepare(
+            'SELECT m.id, m.cuenta_id, m.tipo, m.monto, m.fecha, m.descripcion
+             FROM movimientos m
+             INNER JOIN cuentas c ON c.id = m.cuenta_id
+             WHERE c.usuario_id = :uid AND c.estado = 1
+             ORDER BY m.fecha DESC, m.id DESC'
+        );
+        $stmt->execute(['uid' => $usuarioId]);
+
+        $lista = [];
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $lista[] = new Movimiento(
+                (int) $row['id'],
+                (int) $row['cuenta_id'],
+                (string) $row['tipo'],
+                (float) $row['monto'],
+                (string) $row['fecha'],
+                (string) $row['descripcion'],
+                $db
+            );
+        }
+
+        return $lista;
+    }
 }
