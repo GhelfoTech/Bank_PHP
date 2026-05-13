@@ -38,10 +38,12 @@ CREATE TABLE IF NOT EXISTS movimientos (
         ON UPDATE CASCADE ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
--- Datos iniciales (coinciden con el panel de demostración)
+-- Datos iniciales (panel de demostración).
+-- Contraseña de ambos usuarios de prueba: password
+-- (hash bcrypt compatible con password_verify en PHP).
 INSERT INTO usuarios (id, cedula, nombres, email, password, rol, estado) VALUES
-    (1, '0102030405', 'Ana Admin', 'ana.admin@banco.local', 'admin123', 'administrador', 1),
-    (2, '1919191919', 'Carlos Cliente', 'carlos.cliente@banco.local', 'cliente123', 'cliente', 1)
+    (1, '0102030405', 'Ana Admin', 'ana.admin@banco.local', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'administrador', 1),
+    (2, '1919191919', 'Carlos Cliente', 'carlos.cliente@banco.local', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'cliente', 1)
 ON DUPLICATE KEY UPDATE
     cedula = VALUES(cedula),
     nombres = VALUES(nombres),

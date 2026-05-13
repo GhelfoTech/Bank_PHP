@@ -10,21 +10,26 @@
 <body>
     <aside class="sidebar">
         <h2 style="margin-bottom: 40px; color: var(--accent)">Bank Josstor.</h2>
-        
+
         <div class="admin-card">
-            <h4>Administrador Activo</h4>
+            <h4>Sesión activa</h4>
             <div class="admin-data">
-                <p><b>Nombre:</b> <?php echo htmlspecialchars($administrador->getNombres()); ?></p>
-                <p><b>ID:</b> #<?php echo $administrador->getId(); ?></p>
-                <p><b>Cédula:</b> <?php echo htmlspecialchars($administrador->getCedula()); ?></p>
-                <p><b>Email:</b> <small><?php echo htmlspecialchars($administrador->getEmail()); ?></small></p>
+                <p><b>Nombre:</b> <?php echo htmlspecialchars($usuario->getNombres()); ?></p>
+                <p><b>Rol:</b> <?php echo htmlspecialchars(ucfirst($usuario->getRol())); ?></p>
+                <p><b>ID:</b> #<?php echo $usuario->getId(); ?></p>
+                <p><b>Cédula:</b> <?php echo htmlspecialchars($usuario->getCedula()); ?></p>
+                <p><b>Email:</b> <small><?php echo htmlspecialchars($usuario->getEmail()); ?></small></p>
             </div>
         </div>
 
+        <p style="margin-bottom: 12px; color: var(--text-muted); font-size: 0.9rem;">
+            <a href="index.php?route=logout" style="color: var(--danger); text-decoration: none; font-weight: 600;">Cerrar sesión</a>
+        </p>
+
         <nav style="color: var(--text-muted); font-size: 0.9rem;">
-            <p style="margin-bottom: 15px;">Permisos detectados:</p>
+            <p style="margin-bottom: 15px;">Permisos:</p>
             <ul style="list-style: none; padding-left: 5px;">
-                <?php foreach($administrador->obtenerPermisos() as $permiso): ?>
+                <?php foreach ($usuario->obtenerPermisos() as $permiso): ?>
                     <li style="margin-bottom: 8px;">✓ <?php echo str_replace('_', ' ', $permiso); ?></li>
                 <?php endforeach; ?>
             </ul>
@@ -34,17 +39,21 @@
     <main class="main-view">
         <header class="top-bar">
             <div>
-                <h1 style="font-size: 2rem;">Cliente</h1>
+                <h1 style="font-size: 2rem;">Panel</h1>
                 <div class="client-tag">
-                    Cédula: <?php echo htmlspecialchars($cliente->getCedula()); ?> | <?php echo htmlspecialchars($cliente->getEmail()); ?>
+                    <?php echo htmlspecialchars($usuario->getNombres()); ?> · <?php echo htmlspecialchars(ucfirst($usuario->getRol())); ?>
                 </div>
             </div>
-            <span class="status-badge">SISTEMA ONLINE</span>
+            <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 10px;">
+                <span class="status-badge">SISTEMA ONLINE</span>
+                <a href="index.php?route=logout" style="color: var(--text-muted); font-size: 0.85rem;">Cerrar sesión</a>
+            </div>
         </header>
 
+        <?php if ($cuentaOrigen !== null): ?>
         <section class="accounts-grid">
             <div class="bank-card">
-                <span class="balance-label">CUENTA DE AHORROS PRINCIPAL</span>
+                <span class="balance-label">CUENTA PRINCIPAL (ORIGEN)</span>
                 <div class="balance-value">$<?php echo number_format($cuentaOrigen->getSaldo(), 2); ?></div>
                 <div class="card-footer">
                     <div class="footer-item">
@@ -58,8 +67,9 @@
                 </div>
             </div>
 
+            <?php if ($cuentaDestino !== null): ?>
             <div class="bank-card" style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);">
-                <span class="balance-label">CUENTA DESTINO VINCULADA</span>
+                <span class="balance-label">CUENTA DESTINO</span>
                 <div class="balance-value">$<?php echo number_format($cuentaDestino->getSaldo(), 2); ?></div>
                 <div class="card-footer">
                     <div class="footer-item">
@@ -72,41 +82,49 @@
                     </div>
                 </div>
             </div>
+            <?php endif; ?>
         </section>
+        <?php else: ?>
+        <section class="accounts-grid" style="margin-bottom: 30px;">
+            <p style="color: var(--text-muted);">No hay cuentas bancarias para mostrar en este usuario (por ejemplo, un administrador sin cuentas, o un cliente sin registros en la tabla cuentas).</p>
+        </section>
+        <?php endif; ?>
 
-
-        
         <section class="activity-log">
             <h3 style="margin-bottom: 25px; font-size: 1.2rem;">Trazabilidad de Movimientos</h3>
-            
+
+            <?php if ($cuentaOrigen !== null): ?>
             <div class="log-entry success">
                 <div class="log-icon" style="background: rgba(16, 185, 129, 0.2); color: var(--success); width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold;">+</div>
                 <div class="log-info">
-                    <b>Depósito Recibido</b>
+                    <b>Depósito</b>
                     <span><?php echo htmlspecialchars($depositoMensaje); ?></span>
                 </div>
                 <div style="font-weight: 700; font-size: 1.1rem; color: var(--success)">+$150.00</div>
             </div>
+            <?php endif; ?>
 
-            <div class="log-entry <?php echo $transferenciaExitosa ? 'success' : 'error'; ?>">
-                <div class="log-icon" style="background: <?php echo $transferenciaExitosa ? 'rgba(16, 185, 129, 0.2)' : 'rgba(244, 63, 94, 0.2)'; ?>; color: <?php echo $transferenciaExitosa ? 'var(--success)' : 'var(--danger)'; ?>; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold;">
-                    <?php echo $transferenciaExitosa ? '⇄' : '✕'; ?>
+            <div class="log-entry <?php echo ($cuentaDestino !== null && $transferenciaExitosa) ? 'success' : (($cuentaDestino !== null) ? 'error' : ''); ?>">
+                <div class="log-icon" style="background: <?php echo ($cuentaDestino !== null && $transferenciaExitosa) ? 'rgba(16, 185, 129, 0.2)' : 'rgba(148, 163, 184, 0.2)'; ?>; color: <?php echo ($cuentaDestino !== null && $transferenciaExitosa) ? 'var(--success)' : 'var(--text-muted)'; ?>; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold;">
+                    <?php echo ($cuentaDestino !== null) ? ($transferenciaExitosa ? '⇄' : '✕') : '—'; ?>
                 </div>
                 <div class="log-info">
-                    <b>Transferencia Bancaria</b>
+                    <b>Transferencia</b>
                     <span><?php echo htmlspecialchars($transferenciaMensaje); ?></span>
                 </div>
+                <?php if ($cuentaDestino !== null): ?>
                 <div style="font-weight: 700; font-size: 1.1rem; color: <?php echo $transferenciaExitosa ? 'var(--success)' : 'var(--danger)'; ?>">
                     $500.00
                 </div>
+                <?php endif; ?>
             </div>
         </section>
     </main>
 
     <script>
         const socket = new WebSocket('ws://localhost:8080');
-        socket.onopen = function(e) {
-            console.log("✅ Conectado al servidor de WebSockets del Banco");
+        socket.onopen = function() {
+            console.log("Conectado al servidor de WebSockets del Banco");
         };
     </script>
 </body>
