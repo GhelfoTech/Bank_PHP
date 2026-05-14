@@ -58,6 +58,109 @@
         }
         .quick-op-btn:hover { filter: brightness(1.08); }
 
+        /* Paleta transferencias (ámbar suave, modo oscuro) */
+        .transfer-section,
+        .history-modal-row-icon--transfer,
+        .log-icon--transfer {
+            --transfer-amber: #e8b565;
+            --transfer-amber-soft: rgba(232, 181, 101, 0.16);
+            --transfer-amber-border: rgba(232, 181, 101, 0.38);
+            --transfer-amber-muted: rgba(232, 181, 101, 0.55);
+            --transfer-btn-top: #e8b565;
+            --transfer-btn-bottom: #b45309;
+        }
+
+        .transfer-section {
+            margin-bottom: 44px;
+            padding: 26px 28px 28px;
+            border-radius: 20px;
+            border: 1px solid var(--transfer-amber-border);
+            background: linear-gradient(
+                165deg,
+                rgba(232, 181, 101, 0.09) 0%,
+                rgba(15, 23, 42, 0.55) 42%,
+                var(--card) 100%
+            );
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(232, 181, 101, 0.08);
+        }
+        .transfer-section h3 {
+            font-size: 1.28rem;
+            font-weight: 700;
+            margin: 0 0 8px;
+            letter-spacing: -0.02em;
+            color: var(--text);
+        }
+        .transfer-section__lead {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin: 0 0 22px;
+            max-width: 52ch;
+            line-height: 1.5;
+        }
+        .transfer-section__lead strong { color: var(--transfer-amber); font-weight: 600; }
+        .transfer-card {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            max-width: min(640px, 100%);
+        }
+        .transfer-card .op-title {
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.09em;
+            color: var(--transfer-amber);
+        }
+        .transfer-card input[type="text"],
+        .transfer-card textarea {
+            width: 100%;
+            padding: 11px 14px;
+            border-radius: 10px;
+            border: 1px solid rgba(232, 181, 101, 0.22);
+            background: rgba(15, 23, 42, 0.75);
+            color: var(--text);
+            font-size: 0.95rem;
+            font-family: inherit;
+            box-sizing: border-box;
+        }
+        .transfer-card textarea {
+            min-height: 78px;
+            resize: vertical;
+            line-height: 1.45;
+        }
+        .transfer-card input:focus,
+        .transfer-card textarea:focus {
+            outline: none;
+            border-color: var(--transfer-amber-muted);
+            box-shadow: 0 0 0 2px rgba(232, 181, 101, 0.12);
+        }
+        .transfer-btn {
+            padding: 12px 22px;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(135deg, var(--transfer-btn-top) 0%, var(--transfer-btn-bottom) 100%);
+            color: #1a1206;
+            font-weight: 700;
+            font-size: 0.9rem;
+            font-family: inherit;
+            cursor: pointer;
+            align-self: flex-start;
+            box-shadow: 0 8px 22px rgba(180, 83, 9, 0.28);
+        }
+        .transfer-btn:hover {
+            filter: brightness(1.07);
+            box-shadow: 0 10px 26px rgba(180, 83, 9, 0.35);
+        }
+
+        .log-icon--transfer {
+            background: var(--transfer-amber-soft) !important;
+            color: var(--transfer-amber) !important;
+        }
+        .history-modal-row-icon--transfer {
+            background: var(--transfer-amber-soft) !important;
+            color: var(--transfer-amber) !important;
+        }
+
         /* Modal panel (éxito / error) */
         .panel-modal-root {
             position: fixed;
@@ -103,15 +206,34 @@
         .panel-modal-dialog--success { border-color: rgba(16, 185, 129, 0.45); }
         .panel-modal-dialog--error { border-color: rgba(244, 63, 94, 0.45); }
         .panel-modal-dialog--transfer-receipt {
-            border-color: rgba(99, 102, 241, 0.5);
+            border-color: rgba(232, 181, 101, 0.42);
             max-width: 440px;
+            box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(232, 181, 101, 0.06) inset;
         }
         .panel-modal-dialog--transfer-receipt .panel-modal-icon {
-            background: rgba(99, 102, 241, 0.2);
-            color: var(--accent);
+            background: rgba(232, 181, 101, 0.2);
+            color: #f0c97c;
         }
         .panel-modal-dialog--transfer-receipt .panel-modal-title {
-            color: var(--text);
+            color: #f5e6d4;
+        }
+        .panel-modal-dialog--transfer-receipt .panel-modal-subtitle {
+            color: #e8b565;
+        }
+        .panel-modal-dialog--transfer-receipt .panel-modal-meta dt {
+            color: rgba(232, 181, 101, 0.75);
+        }
+        .panel-modal-dialog--transfer-receipt #transfer-receipt-monto {
+            color: #f0c97c;
+            font-weight: 700;
+        }
+        .panel-modal-dialog--transfer-receipt .panel-modal-btn {
+            background: linear-gradient(135deg, #e8b565 0%, #b45309 100%);
+            color: #1a1206;
+            box-shadow: 0 8px 20px rgba(180, 83, 9, 0.35);
+        }
+        .panel-modal-dialog--transfer-receipt .panel-modal-btn:hover {
+            filter: brightness(1.06);
         }
         .panel-modal-subtitle {
             font-size: 0.82rem;
@@ -405,6 +527,12 @@
             height: 18px;
             flex-shrink: 0;
         }
+
+        .log-entry.transfer { 
+            border-left: 4px solid #e8b565; 
+        }
+
+        /* Media queries para dispositivos móviles */
         @media (max-width: 640px) {
             .history-modal-table-head { display: none; }
             .history-modal-row {
@@ -515,15 +643,22 @@
                     <input type="text" name="monto" inputmode="decimal" placeholder="Monto a retirar ($0.00)" required>
                     <button type="submit" class="quick-op-btn">Retirar</button>
                 </form>
-                <form class="quick-op-card" method="post" action="index.php?route=transferir" autocomplete="off">
-                    <span class="op-title">Transferir a otro usuario</span>
-                    <input type="text" name="numero_cuenta_destino" placeholder="Número de cuenta destino" required maxlength="64">
-                    <input type="text" name="cedula_destino" placeholder="Cédula del titular de la cuenta" required maxlength="32">
-                    <input type="text" name="monto" inputmode="decimal" placeholder="Monto a transferir ($0.00)" required>
-                    <textarea name="descripcion_personalizada" placeholder="Motivo o descripción (opcional)" maxlength="500"></textarea>
-                    <button type="submit" class="quick-op-btn">Enviar transferencia</button>
-                </form>
             </div>
+        </section>
+
+        <section class="transfer-section" aria-label="Transferir a terceros">
+            <h3>Transferir a terceros</h3>
+            <p class="transfer-section__lead">
+                Envío seguro a otra cuenta. Verifique el <strong>número de cuenta</strong> y la <strong>cédula del titular</strong> antes de confirmar.
+            </p>
+            <form class="transfer-card" method="post" action="index.php?route=transferir" autocomplete="off">
+                <span class="op-title">Datos de la transferencia</span>
+                <input type="text" name="numero_cuenta_destino" placeholder="Número de cuenta destino" required maxlength="64">
+                <input type="text" name="cedula_destino" placeholder="Cédula del titular de la cuenta" required maxlength="32">
+                <input type="text" name="monto" inputmode="decimal" placeholder="Monto a transferir ($0.00)" required>
+                <textarea name="descripcion_personalizada" placeholder="Motivo o descripción (opcional)" maxlength="500"></textarea>
+                <button type="submit" class="transfer-btn">Enviar transferencia</button>
+            </form>
         </section>
         <?php endif; ?>
 
@@ -537,6 +672,7 @@
                 <?php foreach ($historialVistaPrevia as $mov): ?>
                     <?php
                     $tipoRaw = $mov->getTipo();
+                    $descLower = strtolower($mov->getDescripcion());
                     $tipoEtiqueta = match ($tipoRaw) {
                         'deposito' => 'Depósito',
                         'retiro' => 'Retiro',
@@ -546,6 +682,7 @@
                     $claseLog = match ($tipoRaw) {
                         'deposito' => 'success',
                         'retiro' => 'error',
+                        'transferencia' => 'transfer',
                         default => '',
                     };
                     $icono = match ($tipoRaw) {
@@ -553,30 +690,50 @@
                         'retiro' => '−',
                         default => '⇄',
                     };
-                    $bgIcono = match ($tipoRaw) {
-                        'deposito' => 'rgba(16, 185, 129, 0.2)',
-                        'retiro' => 'rgba(239, 68, 68, 0.2)',
-                        default => 'rgba(148, 163, 184, 0.2)',
-                    };
-                    $colorIcono = match ($tipoRaw) {
-                        'deposito' => 'var(--success)',
-                        'retiro' => 'var(--danger)',
-                        default => 'var(--text-muted)',
-                    };
-                    $prefijoMonto = match ($tipoRaw) {
-                        'deposito' => '+',
-                        'retiro' => '−',
-                        default => '',
-                    };
-                    $colorMonto = match ($tipoRaw) {
-                        'deposito' => 'var(--success)',
-                        'retiro' => 'var(--danger)',
-                        default => 'var(--text-muted)',
-                    };
+                    if ($tipoRaw === 'transferencia') {
+                        $bgIcono = 'rgba(232, 181, 101, 0.16)';
+                        $colorIcono = '#e8b565';
+                    } else {
+                        $bgIcono = match ($tipoRaw) {
+                            'deposito' => 'rgba(16, 185, 129, 0.2)',
+                            'retiro' => 'rgba(239, 68, 68, 0.2)',
+                            default => 'rgba(148, 163, 184, 0.2)',
+                        };
+                        $colorIcono = match ($tipoRaw) {
+                            'deposito' => 'var(--success)',
+                            'retiro' => 'var(--danger)',
+                            default => 'var(--text-muted)',
+                        };
+                    }
+                    if ($tipoRaw === 'deposito') {
+                        $prefijoMonto = '+';
+                        $colorMonto = 'var(--success)';
+                    } elseif ($tipoRaw === 'retiro') {
+                        $prefijoMonto = '−';
+                        $colorMonto = 'var(--danger)';
+                    } elseif ($tipoRaw === 'transferencia') {
+                        if (str_contains($descLower, 'recibida')) {
+                            $prefijoMonto = '+';
+                            $colorMonto = 'var(--success)';
+                        } elseif (str_contains($descLower, 'enviada')) {
+                            $prefijoMonto = '−';
+                            $colorMonto = 'var(--danger)';
+                        } else {
+                            $prefijoMonto = '';
+                            $colorMonto = 'var(--text-muted)';
+                        }
+                    } else {
+                        $prefijoMonto = '';
+                        $colorMonto = 'var(--text-muted)';
+                    }
                     $montoAbs = number_format(abs($mov->getMonto()), 2);
+                    $logIconClass = $tipoRaw === 'transferencia' ? 'log-icon log-icon--transfer' : 'log-icon';
+                    $logIconStyle = $tipoRaw === 'transferencia'
+                        ? 'width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold;'
+                        : 'background: ' . $bgIcono . '; color: ' . $colorIcono . '; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold;';
                     ?>
             <div class="log-entry <?php echo htmlspecialchars($claseLog); ?>">
-                <div class="log-icon" style="background: <?php echo $bgIcono; ?>; color: <?php echo $colorIcono; ?>; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold;"><?php echo htmlspecialchars($icono); ?></div>
+                <div class="<?php echo htmlspecialchars($logIconClass); ?>" style="<?php echo $logIconStyle; ?>"><?php echo htmlspecialchars($icono); ?></div>
                 <div class="log-info">
                     <b><?php echo htmlspecialchars($tipoEtiqueta); ?></b>
                     <span style="display: block; margin-top: 4px; font-size: 0.85rem; color: var(--text-muted);"><?php echo htmlspecialchars($mov->getFecha()); ?></span>
@@ -632,6 +789,7 @@
                 <?php foreach ($historial as $mov): ?>
                     <?php
                     $tipoRaw = $mov->getTipo();
+                    $descLower = strtolower($mov->getDescripcion());
                     $tipoEtiqueta = match ($tipoRaw) {
                         'deposito' => 'Depósito',
                         'retiro' => 'Retiro',
@@ -643,17 +801,21 @@
                         'retiro' => '−',
                         default => '⇄',
                     };
-                    $bgIcono = match ($tipoRaw) {
-                        'deposito' => 'rgba(16, 185, 129, 0.2)',
-                        'retiro' => 'rgba(239, 68, 68, 0.2)',
-                        default => 'rgba(148, 163, 184, 0.2)',
-                    };
-                    $colorIcono = match ($tipoRaw) {
-                        'deposito' => 'var(--success)',
-                        'retiro' => 'var(--danger)',
-                        default => 'var(--text-muted)',
-                    };
-                    $descLower = strtolower($mov->getDescripcion());
+                    if ($tipoRaw === 'transferencia') {
+                        $bgIcono = 'rgba(232, 181, 101, 0.16)';
+                        $colorIcono = '#e8b565';
+                    } else {
+                        $bgIcono = match ($tipoRaw) {
+                            'deposito' => 'rgba(16, 185, 129, 0.2)',
+                            'retiro' => 'rgba(239, 68, 68, 0.2)',
+                            default => 'rgba(148, 163, 184, 0.2)',
+                        };
+                        $colorIcono = match ($tipoRaw) {
+                            'deposito' => 'var(--success)',
+                            'retiro' => 'var(--danger)',
+                            default => 'var(--text-muted)',
+                        };
+                    }
                     if ($tipoRaw === 'deposito') {
                         $montoClass = 'history-monto--suma';
                         $prefijoMonto = '+';
@@ -677,11 +839,16 @@
                     }
                     $montoAbs = number_format(abs($mov->getMonto()), 2);
                     $tipoData = htmlspecialchars($tipoRaw, ENT_QUOTES, 'UTF-8');
+                    $historyIconClass = 'history-modal-row-icon'
+                        . ($tipoRaw === 'transferencia' ? ' history-modal-row-icon--transfer' : '');
+                    $historyIconStyle = $tipoRaw === 'transferencia'
+                        ? ''
+                        : ('background: ' . $bgIcono . '; color: ' . $colorIcono . ';');
                     ?>
                 <div class="history-modal-row" data-tipo="<?php echo $tipoData; ?>">
                     <div class="history-modal-row-fecha"><?php echo htmlspecialchars($mov->getFecha(), ENT_QUOTES, 'UTF-8'); ?></div>
                     <div class="history-modal-row-tipo">
-                        <span class="history-modal-row-icon" style="background: <?php echo $bgIcono; ?>; color: <?php echo $colorIcono; ?>;"><?php echo htmlspecialchars($icono, ENT_QUOTES, 'UTF-8'); ?></span>
+                        <span class="<?php echo htmlspecialchars($historyIconClass, ENT_QUOTES, 'UTF-8'); ?>"<?php echo $historyIconStyle !== '' ? ' style="' . htmlspecialchars($historyIconStyle, ENT_QUOTES, 'UTF-8') . '"' : ''; ?>><?php echo htmlspecialchars($icono, ENT_QUOTES, 'UTF-8'); ?></span>
                         <span><?php echo htmlspecialchars($tipoEtiqueta, ENT_QUOTES, 'UTF-8'); ?></span>
                     </div>
                     <div class="history-modal-row-desc"><?php echo htmlspecialchars($mov->getDescripcion(), ENT_QUOTES, 'UTF-8'); ?></div>

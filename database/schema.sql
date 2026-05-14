@@ -1,5 +1,4 @@
 -- Base de datos para BANCO - PHP (XAMPP / MySQL)
--- Ejecutar en phpMyAdmin o: mysql -u root < database/schema.sql
 
 CREATE DATABASE IF NOT EXISTS banco_php
   CHARACTER SET utf8mb4
