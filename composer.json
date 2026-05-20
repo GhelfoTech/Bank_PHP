@@ -1,17 +1,21 @@
-{
-    "name": "windows11/banco-php",
-    "autoload": {
-        "psr-4": {
-            "App\\": "src/"
-        }
-    },
-    "authors": [
-        {
-            "name": "Victor Ghelfi",
-            "email": "ghelfivictor3@gmail.com"
-        }
-    ],
-    "require": {
-        "cboden/ratchet": "^0.4.4"
-    }
-}
+{
+    "name": "windows11/banco-php",
+    "autoload": {
+        "psr-4": {
+            "App\\Models\\": "src/models/",
+            "App\\Controllers\\": "src/controllers/",
+            "App\\Config\\": "src/config/",
+            "App\\Socket\\": "src/Socket/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Victor Ghelfi",
+            "email": "ghelfivictor3@gmail.com"
+        }
+    ],
+    "require": {
+        "cboden/ratchet": "^0.4.4"
+    }
+}
+
