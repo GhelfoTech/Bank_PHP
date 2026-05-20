@@ -39,24 +39,3 @@ CREATE TABLE IF NOT EXISTS movimientos (
     CONSTRAINT fk_movimientos_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios (id)
         ON UPDATE CASCADE ON DELETE RESTRICT
 ) ENGINE=InnoDB;
-
--- Datos iniciales (panel de demostración).
--- Contraseña de ambos usuarios de prueba: password
-INSERT INTO usuarios (id, cedula, nombres, email, password, rol, estado) VALUES
-    (1, '0102030405', 'Ana Admin', 'ana.admin@banco.local', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'administrador', 1),
-    (2, '1919191919', 'Carlos Cliente', 'carlos.cliente@banco.local', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'cliente', 1)
-ON DUPLICATE KEY UPDATE
-    cedula = VALUES(cedula),
-    nombres = VALUES(nombres),
-    email = VALUES(email),
-    password = VALUES(password),
-    rol = VALUES(rol),
-    estado = VALUES(estado);
-
-INSERT INTO cuentas (id, usuario_id, numero_cuenta, saldo, estado) VALUES
-    (1, 2, '001-000001', 400.00, 1),
-    (2, 2, '001-000002', 50.00, 1)
-ON DUPLICATE KEY UPDATE
-    usuario_id = VALUES(usuario_id),
-    saldo = VALUES(saldo),
-    estado = VALUES(estado);
