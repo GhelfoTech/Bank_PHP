@@ -36,6 +36,14 @@ switch ($route) {
         (new \App\Controllers\BancoController())->procesarTransferencia();
         break;
 
+    case 'toggle_estado':
+        (new \App\Controllers\BancoController())->toggleEstado();
+        break;
+
+    case 'reporte_pdf':
+        (new \App\Controllers\BancoController())->generarReportePdf();
+        break;
+
     default:
         (new \App\Config\AuthController())->login();
         break;

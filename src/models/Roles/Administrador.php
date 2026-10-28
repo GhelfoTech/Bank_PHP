@@ -24,8 +24,11 @@ class Administrador extends Usuario
         return [
             'gestionar_usuarios',
             'gestionar_cuentas',
-            'aprobar_operaciones',
-            'ver_reportes'
+            'ver_reportes',
+            'realizar_depositos',
+            'realizar_retiros',
+            'realizar_transferencias',
+            'consultar_operaciones',
         ];
     }
 }

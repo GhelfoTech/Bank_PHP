@@ -126,6 +126,58 @@
         </section>
         <?php endif; ?>
 
+        <?php if ($usuario->getRol() === 'administrador'): ?>
+        <section class="activity-log" aria-label="Gestión de usuarios" style="margin-bottom: 40px;">
+            <h3 style="margin-bottom: 12px; font-size: 1.2rem;">Gestión de usuarios y cuentas</h3>
+            <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 22px;">
+                Habilite o deshabilite otros usuarios (y sus cuentas). Genere el reporte PDF de movimientos de cada cuenta.
+            </p>
+            <?php if (empty($usuariosGestion)): ?>
+            <p style="color: var(--text-muted); margin: 0;">No hay otros usuarios registrados en el sistema.</p>
+            <?php else: ?>
+                <?php foreach ($usuariosGestion as $item): ?>
+                    <?php
+                    $activo = (bool) $item['estado'];
+                    $claseEstado = $activo ? 'success' : 'error';
+                    $etiquetaEstado = $activo ? 'ACTIVO' : 'INACTIVO';
+                    $colorEstado = $activo ? 'var(--success)' : 'var(--danger)';
+                    $textoToggle = $activo ? 'Deshabilitar' : 'Habilitar';
+                    $cuentaId = $item['cuenta_id'];
+                    $numeroCuenta = $item['numero_cuenta'] !== null ? (string) $item['numero_cuenta'] : 'Sin cuenta';
+                    $saldoTexto = $item['saldo'] !== null ? ('$' . number_format((float) $item['saldo'], 2)) : '—';
+                    ?>
+            <div class="log-entry <?php echo htmlspecialchars($claseEstado, ENT_QUOTES, 'UTF-8'); ?>">
+                <div class="log-info" style="margin-left: 0;">
+                    <b><?php echo htmlspecialchars((string) $item['nombres'], ENT_QUOTES, 'UTF-8'); ?></b>
+                    <span style="display: block; margin-top: 4px;">
+                        #<?php echo (int) $item['id']; ?>
+                        · <?php echo htmlspecialchars(ucfirst((string) $item['rol']), ENT_QUOTES, 'UTF-8'); ?>
+                        · Cédula: <?php echo htmlspecialchars((string) $item['cedula'], ENT_QUOTES, 'UTF-8'); ?>
+                    </span>
+                    <span style="display: block; margin-top: 2px;">
+                        <?php echo htmlspecialchars((string) $item['email'], ENT_QUOTES, 'UTF-8'); ?>
+                        · Cuenta: <?php echo htmlspecialchars($numeroCuenta, ENT_QUOTES, 'UTF-8'); ?>
+                        · Saldo: <?php echo htmlspecialchars($saldoTexto, ENT_QUOTES, 'UTF-8'); ?>
+                    </span>
+                </div>
+                <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 8px; white-space: nowrap;">
+                    <b style="color: <?php echo $colorEstado; ?>;"><?php echo $etiquetaEstado; ?></b>
+                    <form method="post" action="index.php?route=toggle_estado" style="margin: 0;">
+                        <input type="hidden" name="usuario_id" value="<?php echo (int) $item['id']; ?>">
+                        <button type="submit" class="quick-op-btn"><?php echo htmlspecialchars($textoToggle, ENT_QUOTES, 'UTF-8'); ?></button>
+                    </form>
+                    <?php if ($cuentaId !== null): ?>
+                    <a href="index.php?route=reporte_pdf&amp;cuenta_id=<?php echo (int) $cuentaId; ?>" class="quick-op-btn" style="text-decoration: none; display: inline-block; text-align: center;">
+                        Generar Reporte PDF
+                    </a>
+                    <?php endif; ?>
+                </div>
+            </div>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </section>
+        <?php endif; ?>
+
         <?php $historialVistaPrevia = array_slice($historial, 0, 3); ?>
         <section class="activity-log">
             <h3 style="margin-bottom: 25px; font-size: 1.2rem;">Trazabilidad de Movimientos</h3>

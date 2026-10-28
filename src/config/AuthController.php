@@ -175,7 +175,7 @@ class AuthController extends Database
             ]);
             $usuarioId = (int) $db->lastInsertId();
 
-            if ($rol === 'cliente') {
+            if (in_array($rol, ['cliente', 'administrador'], true)) {
                 $tmpNumero = 'tmp-' . bin2hex(random_bytes(16));
                 $insCuenta = $db->prepare(
                     'INSERT INTO cuentas (usuario_id, numero_cuenta, saldo, estado) VALUES (:uid, :numero, 0.00, 1)'

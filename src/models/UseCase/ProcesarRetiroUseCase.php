@@ -73,8 +73,8 @@ class ProcesarRetiroUseCase extends Database
 
         $usuario = $this->cargarUsuarioLogueado($db);
 
-        if ($usuario->getRol() !== 'cliente') {
-            $_SESSION['panel_error'] = 'Las operaciones bancarias solo están disponibles para clientes con cuenta.';
+        if (!in_array($usuario->getRol(), ['cliente', 'administrador'], true)) {
+            $_SESSION['panel_error'] = 'Las operaciones bancarias solo están disponibles para usuarios con cuenta.';
 
             header('Location: index.php?route=panel');
 

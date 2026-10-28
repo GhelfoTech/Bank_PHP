@@ -64,9 +64,9 @@ class ProcesarDepositoUseCase extends Database
 
         $usuario = $this->cargarUsuarioLogueado($db);
 
-        if ($usuario->getRol() !== 'cliente') {
+        if (!in_array($usuario->getRol(), ['cliente', 'administrador'], true)) {
 
-            $_SESSION['panel_error'] = 'Las operaciones bancarias solo están disponibles para clientes con cuenta.';
+            $_SESSION['panel_error'] = 'Las operaciones bancarias solo están disponibles para usuarios con cuenta.';
 
             header('Location: index.php?route=panel');
 

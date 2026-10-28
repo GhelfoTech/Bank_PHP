@@ -1,0 +1,4940 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+.gitignore
+assets/css/styles.css
+bin/socket-server.php
+composer.json
+database/migration_movimientos_usuario_id.sql
+database/schema.sql
+index.php
+README.md
+src/config/AuthController.php
+src/controllers/BancoController.php
+src/controllers/router.php
+src/models/Cuenta.php
+src/models/Database.php
+src/models/Movimiento.php
+src/models/Roles/Administrador.php
+src/models/Roles/Cliente.php
+src/models/UseCase/CargarPanelUseCase.php
+src/models/UseCase/ProcesarDepositoUseCase.php
+src/models/UseCase/ProcesarRetiroUseCase.php
+src/models/UseCase/ProcesarTransferenciaUseCase.php
+src/models/Usuario.php
+src/Socket/Notificador.php
+src/views/banco_view.php
+src/views/login.php
+src/views/registro.php
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path=".gitignore">
+/vendor/
+</file>
+
+<file path="bin/socket-server.php">
+<?php
+
+require __DIR__ . '/../vendor/autoload.php';
+
+use App\Socket\Notificador;
+use Ratchet\Http\HttpServer;
+use Ratchet\Server\IoServer;
+use Ratchet\WebSocket\WsServer;
+
+$server = IoServer::factory(
+    new HttpServer(
+        new WsServer(
+            new Notificador()
+        )
+    ),
+    8080
+);
+
+echo "Servidor de WebSockets iniciado en el puerto 8080..." . PHP_EOL;
+
+$server->run();
+</file>
+
+<file path="database/migration_movimientos_usuario_id.sql">
+-- Ejecutar si ya tenías la BD sin la columna usuario_id en movimientos.
+USE banco_php;
+
+ALTER TABLE movimientos
+    ADD COLUMN usuario_id INT UNSIGNED NOT NULL DEFAULT 0 AFTER cuenta_id;
+
+UPDATE movimientos m
+INNER JOIN cuentas c ON c.id = m.cuenta_id
+SET m.usuario_id = c.usuario_id;
+
+ALTER TABLE movimientos
+    ADD CONSTRAINT fk_movimientos_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios (id)
+        ON UPDATE CASCADE ON DELETE RESTRICT;
+</file>
+
+<file path="src/Socket/Notificador.php">
+<?php
+
+namespace App\Socket;
+
+use Ratchet\ConnectionInterface;
+use Ratchet\MessageComponentInterface;
+
+class Notificador implements MessageComponentInterface
+{
+    public function onOpen(ConnectionInterface $conn): void
+    {
+        echo "Nueva conexion detectada! ID: {$conn->resourceId}" . PHP_EOL;
+    }
+
+    public function onMessage(ConnectionInterface $from, $msg): void
+    {
+        echo "Mensaje recibido de {$from->resourceId}: {$msg}" . PHP_EOL;
+    }
+
+    public function onClose(ConnectionInterface $conn): void
+    {
+        echo "Conexion cerrada. ID: {$conn->resourceId}" . PHP_EOL;
+    }
+
+    public function onError(ConnectionInterface $conn, \Exception $e): void
+    {
+        echo "Error en conexion {$conn->resourceId}: {$e->getMessage()}" . PHP_EOL;
+        $conn->close();
+    }
+}
+</file>
+
+<file path="src/config/AuthController.php">
+<?php
+
+declare(strict_types=1);
+
+namespace App\Config;
+
+use App\Models\Database;
+use PDO;
+use PDOException;
+
+class AuthController extends Database
+{
+    public function login(): void
+    {
+        if (isset($_SESSION['usuario_id'])) {
+            header('Location: index.php?route=panel');
+            exit;
+        }
+
+        $error = null;
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $error = $this->intentarLogin();
+
+            if ($error === null) {
+                header('Location: index.php?route=panel');
+                exit;
+            }
+        }
+
+        require __DIR__ . '/../views/login.php';
+    }
+
+    public function registro(): void
+    {
+        if (isset($_SESSION['usuario_id'])) {
+            header('Location: index.php?route=panel');
+            exit;
+        }
+
+        $error = null;
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $error = $this->intentarRegistro();
+
+            if ($error === null) {
+                $_SESSION['registro_ok'] = 'Registro exitoso. Inicie sesión con su correo y contraseña.';
+                header('Location: index.php?route=login');
+                exit;
+            }
+        }
+
+        require __DIR__ . '/../views/registro.php';
+    }
+
+    public function logout(): void
+    {
+        $_SESSION = [];
+        if (ini_get('session.use_cookies')) {
+            $params = session_get_cookie_params();
+            setcookie(
+                session_name(),
+                '',
+                time() - 42000,
+                $params['path'],
+                $params['domain'],
+                (bool) $params['secure'],
+                (bool) $params['httponly']
+            );
+        }
+
+        session_destroy();
+        header('Location: index.php?route=login');
+        exit;
+    }
+
+    private function intentarLogin(): ?string
+    {
+        $email = trim((string) ($_POST['email'] ?? ''));
+        $password = (string) ($_POST['password'] ?? '');
+        $rolSeleccionado = (string) ($_POST['rol'] ?? '');
+
+        if ($email === '' || $password === '') {
+            return 'Ingrese correo y contraseña.';
+        }
+
+        if (!in_array($rolSeleccionado, ['administrador', 'cliente'], true)) {
+            return 'Seleccione un rol válido.';
+        }
+
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return 'El correo electrónico no es válido.';
+        }
+
+        try {
+            $db = $this->getConnection();
+        } catch (PDOException) {
+            return 'No se pudo conectar a la base de datos.';
+        }
+
+        $stmt = $db->prepare(
+            'SELECT id, email, password, rol, estado FROM usuarios WHERE email = :email AND rol = :rol LIMIT 1'
+        );
+
+        $stmt->execute([
+            'email' => $email,
+            'rol' => $rolSeleccionado,
+        ]);
+
+        $row = $stmt->fetch();
+        if ($row === false || !(bool) $row['estado']) {
+            return 'Credenciales incorrectas o usuario inactivo.';
+        }
+
+        if (!password_verify($password, (string) $row['password'])) {
+            return 'Credenciales incorrectas o usuario inactivo.';
+        }
+
+        session_regenerate_id(true);
+        $_SESSION['usuario_id'] = (int) $row['id'];
+        $_SESSION['rol'] = (string) $row['rol'];
+        $_SESSION['nombres'] = $this->obtenerNombreUsuario($db, (int) $row['id']);
+        return null;
+    }
+
+    private function obtenerNombreUsuario(PDO $db, int $id): string
+    {
+        $stmt = $db->prepare('SELECT nombres FROM usuarios WHERE id = :id LIMIT 1');
+        $stmt->execute(['id' => $id]);
+        $row = $stmt->fetch();
+        return $row !== false ? (string) $row['nombres'] : '';
+    }
+
+    private function intentarRegistro(): ?string
+    {
+        $cedula = trim((string) ($_POST['cedula'] ?? ''));
+        $nombres = trim((string) ($_POST['nombres'] ?? ''));
+        $email = trim((string) ($_POST['email'] ?? ''));
+        $password = (string) ($_POST['password'] ?? '');
+        $rol = (string) ($_POST['rol'] ?? '');
+
+        if ($cedula === '' || $nombres === '' || $email === '' || $password === '') {
+            return 'Complete todos los campos obligatorios.';
+        }
+
+        if (!in_array($rol, ['administrador', 'cliente'], true)) {
+            return 'Seleccione un rol válido.';
+        }
+
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return 'El correo electrónico no es válido.';
+        }
+
+        if (strlen($password) < 6) {
+            return 'La contraseña debe tener al menos 6 caracteres.';
+        }
+
+        try {
+            $db = $this->getConnection();
+        } catch (PDOException) {
+            return 'No se pudo conectar a la base de datos.';
+        }
+
+        $hash = password_hash($password, PASSWORD_DEFAULT);
+        $db->beginTransaction();
+
+        try {
+            $stmt = $db->prepare(
+                'INSERT INTO usuarios (cedula, nombres, email, password, rol, estado) VALUES (:cedula, :nombres, :email, :password, :rol, 1)'
+            );
+            $stmt->execute([
+                'cedula' => $cedula,
+                'nombres' => $nombres,
+                'email' => $email,
+                'password' => $hash,
+                'rol' => $rol,
+            ]);
+            $usuarioId = (int) $db->lastInsertId();
+
+            if ($rol === 'cliente') {
+                $tmpNumero = 'tmp-' . bin2hex(random_bytes(16));
+                $insCuenta = $db->prepare(
+                    'INSERT INTO cuentas (usuario_id, numero_cuenta, saldo, estado) VALUES (:uid, :numero, 0.00, 1)'
+                );
+
+                $insCuenta->execute([
+                    'uid' => $usuarioId,
+                    'numero' => $tmpNumero,
+                ]);
+
+                $cuentaId = (int) $db->lastInsertId();
+                $numeroFinal = sprintf('001-%06d', $cuentaId);
+                $upd = $db->prepare('UPDATE cuentas SET numero_cuenta = :n WHERE id = :id LIMIT 1');
+                $upd->execute(['n' => $numeroFinal, 'id' => $cuentaId]);
+            }
+
+            $db->commit();
+
+        } catch (PDOException $e) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+
+            $info = $e->errorInfo ?? [];
+            
+            if (($info[0] ?? '') === '23000' || (int) ($info[1] ?? 0) === 1062) {
+                return 'Ya existe un usuario con esa cédula o correo.';
+            }
+            return 'No se pudo completar el registro. Intente de nuevo.';
+        }
+        return null;
+    }
+}
+</file>
+
+<file path="src/controllers/router.php">
+<?php
+
+declare(strict_types=1);
+
+$route = $_GET['route'] ?? 'login';
+
+$route = is_string($route) ? strtolower(trim($route)) : 'login';
+
+switch ($route) {
+
+    case 'login':
+        (new \App\Config\AuthController())->login();
+        break;
+
+    case 'registro':
+        (new \App\Config\AuthController())->registro();
+        break;
+
+    case 'logout':
+        (new \App\Config\AuthController())->logout();
+        break;
+
+    case 'panel':
+        (new \App\Controllers\BancoController())->mostrarPanel();
+        break;
+
+    case 'depositar':
+        (new \App\Controllers\BancoController())->procesarDeposito();
+        break;
+
+    case 'retirar':
+        (new \App\Controllers\BancoController())->procesarRetiro();
+        break;
+
+    case 'transferir':
+        (new \App\Controllers\BancoController())->procesarTransferencia();
+        break;
+
+    default:
+        (new \App\Config\AuthController())->login();
+        break;
+}
+</file>
+
+<file path="src/models/UseCase/CargarPanelUseCase.php">
+<?php
+
+declare(strict_types=1);
+
+namespace App\Models\UseCase;
+
+use App\Models\Cuenta;
+use App\Models\Database;
+use App\Models\Roles\Administrador;
+use App\Models\Roles\Cliente;
+use App\Models\Usuario;
+use RuntimeException;
+
+class CargarPanelUseCase extends Database
+{
+
+    public function execute(): void
+    {
+        if (empty($_SESSION['usuario_id'])) {
+            header('Location: index.php?route=login');
+            exit;
+        }
+
+        $db = $this->getConnection();
+        $usuario = $this->cargarUsuarioLogueado($db);
+
+        $cuentaOrigen = null;
+        $cuentaDestino = null;
+
+        $historial = [];
+        
+        if ($usuario->getRol() === 'cliente') {
+            $cuentas = $this->cargarCuentasDeUsuario($db, $usuario->getId());
+            
+            if (count($cuentas) >= 2) {
+                $cuentaOrigen = $cuentas[0];
+                $cuentaDestino = $cuentas[1];
+            } 
+            elseif (count($cuentas) === 1) {
+                $cuentaOrigen = $cuentas[0];
+            }
+            
+            $historial = Cuenta::obtenerMovimientosPorUsuarioId($usuario->getId());
+        }
+        
+        require_once __DIR__ . '/../../views/banco_view.php';
+    }
+
+    private function cargarUsuarioLogueado(\PDO $db): Usuario
+    {
+        $id = (int) $_SESSION['usuario_id'];
+        $stmt = $db->prepare('SELECT id, cedula, nombres, email, 
+                              password, rol, estado 
+                              FROM usuarios 
+                              WHERE id = :id 
+                              AND estado = 1 
+                              LIMIT 1');
+
+        $stmt->execute(['id' => $id]);
+        $row = $stmt->fetch();
+        
+        if ($row === false) {
+            $_SESSION = [];
+            session_destroy();
+            header('Location: index.php?route=login');
+            exit;
+        }
+
+        $rol = (string) $row['rol'];
+        
+        if ($rol === 'administrador') {
+            return new Administrador((int) $row['id'], 
+                                     (string) $row['cedula'], 
+                                     (string) $row['nombres'], 
+                                     (string) $row['email'], 
+                                     (string) $row['password'], 
+                                     (bool) $row['estado']);
+        }
+
+        if ($rol === 'cliente') {
+            return new Cliente((int) $row['id'], 
+                               (string) $row['cedula'], 
+                               (string) $row['nombres'], 
+                               (string) $row['email'], 
+                               (string) $row['password'], 
+                               (bool) $row['estado']);
+        }
+        
+        throw new RuntimeException('Rol de usuario no reconocido.');
+    }
+    
+    private function cargarCuentasDeUsuario(\PDO $db, int $usuarioId): array
+    {
+        $stmt = $db->prepare('SELECT id, usuario_id, numero_cuenta, saldo, estado 
+                              FROM cuentas 
+                              WHERE usuario_id = :uid 
+                              AND estado = 1 
+                              ORDER BY id ASC');
+
+        $stmt->execute(['uid' => $usuarioId]);
+        $cuentas = [];
+        
+        while ($row = $stmt->fetch()) {
+            $cuenta = new Cuenta((int) $row['id'], 
+                                 (int) $row['usuario_id'], 
+                                 (string) $row['numero_cuenta'], 
+                                 (float) $row['saldo'], 
+                                 (bool) $row['estado']);
+
+            $cuenta->activarPersistencia();
+            $cuentas[] = $cuenta;
+        }
+        
+        return $cuentas;
+    }
+}
+</file>
+
+<file path="src/models/UseCase/ProcesarDepositoUseCase.php">
+<?php
+
+declare(strict_types=1);
+
+namespace App\Models\UseCase;
+
+use App\Models\Cuenta;
+use App\Models\Database;
+use App\Models\Roles\Administrador;
+use App\Models\Roles\Cliente;
+use App\Models\Usuario;
+
+class ProcesarDepositoUseCase extends Database
+
+{
+    public function execute(): void
+    {
+        $ctx = $this->prepararOperacionClienteDesdePost();
+        $monto = $ctx['monto'];
+        $cuenta = $ctx['cuenta'];
+
+        if ($cuenta->depositar($monto)) {
+            $_SESSION['panel_ok'] = $this->panelOkPayload(
+                'Depósito',
+                 $monto,
+                'Los fondos se acreditaron correctamente en su cuenta principal.'
+            );
+        } else {
+            $_SESSION['panel_error'] = 'No se pudo completar el depósito. Intente nuevamente.';
+        }
+
+        header('Location: index.php?route=panel');
+
+        exit;
+    }
+
+    private function prepararOperacionClienteDesdePost(): array
+    {
+        if (empty($_SESSION['usuario_id'])) {
+
+            header('Location: index.php?route=login');
+
+            exit;
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+
+            header('Location: index.php?route=panel');
+
+            exit;
+        }
+
+        $monto = $this->parseMontoPositivo($_POST['monto'] ?? null);
+
+        if ($monto === null) {
+            $_SESSION['panel_error'] = 'Ingrese un monto válido mayor que cero.';
+
+            header('Location: index.php?route=panel');
+
+            exit;
+        }
+
+        $db = $this->getConnection();
+
+        $usuario = $this->cargarUsuarioLogueado($db);
+
+        if ($usuario->getRol() !== 'cliente') {
+
+            $_SESSION['panel_error'] = 'Las operaciones bancarias solo están disponibles para clientes con cuenta.';
+
+            header('Location: index.php?route=panel');
+
+            exit;
+
+        }
+
+        $cuentas = $this->cargarCuentasDeUsuario($db, $usuario->getId());
+
+        if ($cuentas === []) {
+            $_SESSION['panel_error'] = 'No tiene cuentas activas para operar.';
+
+            header('Location: index.php?route=panel');
+
+            exit;
+        }
+
+        return [
+            'monto' => $monto,
+            'cuenta' => $cuentas[0],
+        ];
+    }
+
+    private function cargarUsuarioLogueado(\PDO $db): Usuario
+    {
+        $id = (int) $_SESSION['usuario_id'];
+        $stmt = $db->prepare(
+            'SELECT id, cedula, nombres, email, password, rol, estado
+             FROM usuarios
+             WHERE id = :id AND estado = 1
+             LIMIT 1'
+        );
+
+        $stmt->execute(['id' => $id]);
+        $row = $stmt->fetch();
+
+        if ($row === false) {
+            $_SESSION = [];
+            session_destroy();
+
+            header('Location: index.php?route=login');
+
+            exit;
+        }
+        $rol = (string) $row['rol'];
+
+        if ($rol === 'administrador') {
+
+            return new Administrador(
+                (int) $row['id'],
+                (string) $row['cedula'],
+                (string) $row['nombres'],
+                (string) $row['email'],
+                (string) $row['password'],
+                (bool) $row['estado']
+            );
+        }
+
+        return new Cliente(
+            (int) $row['id'],
+            (string) $row['cedula'],
+            (string) $row['nombres'],
+            (string) $row['email'],
+            (string) $row['password'],
+            (bool) $row['estado']
+        );
+    }
+
+    private function cargarCuentasDeUsuario(\PDO $db, int $usuarioId): array
+    {
+        $stmt = $db->prepare(
+            'SELECT id, usuario_id, numero_cuenta, saldo, estado
+             FROM cuentas
+             WHERE usuario_id = :uid AND estado = 1
+             ORDER BY id ASC'
+        );
+        
+        $stmt->execute(['uid' => $usuarioId]);
+
+        $cuentas = [];
+
+        while ($row = $stmt->fetch()) {
+            $cuenta = new Cuenta(
+                (int) $row['id'],
+                (int) $row['usuario_id'],
+                (string) $row['numero_cuenta'],
+                (float) $row['saldo'],
+                (bool) $row['estado']
+            );
+
+            $cuenta->activarPersistencia();
+
+            $cuentas[] = $cuenta;
+        }
+
+        return $cuentas;
+    }
+
+    private function parseMontoPositivo(mixed $raw): ?float
+    {
+        if (!is_string($raw)) { return null; }
+
+        $trim = trim($raw);
+
+        if ($trim === '') { return null; }
+
+        $normalized = str_replace(',', '.', $trim);
+
+        $valor = filter_var($normalized, FILTER_VALIDATE_FLOAT);
+
+        if ($valor === false || $valor <= 0 || !is_finite($valor)) { return null; }
+
+        return $valor;
+    }
+
+    private function panelOkPayload(string $tipoEtiqueta, float $monto, string $descripcion): array
+    {
+        return [
+            'tipo' => $tipoEtiqueta,
+            'monto' => $monto,
+            'monto_formateado' => '$' . number_format($monto, 2),
+            'fecha' => date('d/m/Y H:i:s'),
+            'descripcion' => $descripcion,
+        ];
+    }
+}
+</file>
+
+<file path="src/models/UseCase/ProcesarRetiroUseCase.php">
+<?php
+
+declare(strict_types=1);
+
+namespace App\Models\UseCase;
+
+use App\Models\Cuenta;
+use App\Models\Database;
+use App\Models\Roles\Administrador;
+use App\Models\Roles\Cliente;
+use App\Models\Usuario;
+
+class ProcesarRetiroUseCase extends Database
+{
+    public function execute(): void
+    {
+        $ctx = $this->prepararOperacionClienteDesdePost();
+
+        $monto = $ctx['monto'];
+        $cuenta = $ctx['cuenta'];
+
+        if (!$cuenta->validarSaldo($monto)) {
+            $_SESSION['panel_error'] = 'Saldo insuficiente para realizar el retiro.';
+
+            header('Location: index.php?route=panel');
+
+            exit;
+        }
+
+        if (!$cuenta->retirar($monto)) {
+            $_SESSION['panel_error'] = 'No se pudo completar el retiro. Intente nuevamente.';
+        } 
+        else {
+            $_SESSION['panel_ok'] = $this->panelOkPayload(
+                'Retiro',
+                 $monto,
+                'El monto se debitó correctamente de su cuenta principal.'
+            );
+        }
+
+        header('Location: index.php?route=panel');
+
+        exit;
+    }
+
+    private function prepararOperacionClienteDesdePost(): array
+    {
+        if (empty($_SESSION['usuario_id'])) {
+
+            header('Location: index.php?route=login');
+
+            exit;
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+
+            header('Location: index.php?route=panel');
+
+            exit;
+        }
+
+        $monto = $this->parseMontoPositivo($_POST['monto'] ?? null);
+
+        if ($monto === null) {
+            $_SESSION['panel_error'] = 'Ingrese un monto válido mayor que cero.';
+
+            header('Location: index.php?route=panel');
+
+            exit;
+        }
+
+        $db = $this->getConnection();
+
+        $usuario = $this->cargarUsuarioLogueado($db);
+
+        if ($usuario->getRol() !== 'cliente') {
+            $_SESSION['panel_error'] = 'Las operaciones bancarias solo están disponibles para clientes con cuenta.';
+
+            header('Location: index.php?route=panel');
+
+            exit;
+        }
+
+        $cuentas = $this->cargarCuentasDeUsuario($db, $usuario->getId());
+
+        if ($cuentas === []) {
+            $_SESSION['panel_error'] = 'No tiene cuentas activas para operar.';
+
+            header('Location: index.php?route=panel');
+
+            exit;
+        }
+
+        return [
+            'monto' => $monto,
+            'cuenta' => $cuentas[0],
+        ];
+    }
+
+    private function cargarUsuarioLogueado(\PDO $db): Usuario
+    {
+        $id = (int) $_SESSION['usuario_id'];
+
+        $stmt = $db->prepare(
+            'SELECT id, cedula, nombres, email, password, rol, estado
+             FROM usuarios
+             WHERE id = :id AND estado = 1
+             LIMIT 1'
+        );
+
+        $stmt->execute(['id' => $id]);
+
+        $row = $stmt->fetch();
+
+        if ($row === false) {
+            $_SESSION = [];
+
+            session_destroy();
+
+            header('Location: index.php?route=login');
+
+            exit;
+        }
+
+        $rol = (string) $row['rol'];
+
+        if ($rol === 'administrador') {
+
+            return new Administrador(
+                (int) $row['id'],
+                (string) $row['cedula'],
+                (string) $row['nombres'],
+                (string) $row['email'],
+                (string) $row['password'],
+                (bool) $row['estado']
+            );
+        }
+
+        return new Cliente(
+            (int) $row['id'],
+            (string) $row['cedula'],
+            (string) $row['nombres'],
+            (string) $row['email'],
+            (string) $row['password'],
+            (bool) $row['estado']
+        );
+    }
+
+    private function cargarCuentasDeUsuario(\PDO $db, int $usuarioId): array
+    {
+        $stmt = $db->prepare(
+            'SELECT id, usuario_id, numero_cuenta, saldo, estado
+             FROM cuentas
+             WHERE usuario_id = :uid AND estado = 1
+             ORDER BY id ASC'
+        );
+
+        $stmt->execute(['uid' => $usuarioId]);
+
+        $cuentas = [];
+
+        while ($row = $stmt->fetch()) {
+
+            $cuenta = new Cuenta(
+                (int) $row['id'],
+                (int) $row['usuario_id'],
+                (string) $row['numero_cuenta'],
+                (float) $row['saldo'],
+                (bool) $row['estado']
+            );
+
+            $cuenta->activarPersistencia();
+
+            $cuentas[] = $cuenta;
+        }
+
+        return $cuentas;
+    }
+
+    private function parseMontoPositivo(mixed $raw): ?float
+    {
+        if (!is_string($raw)) { return null; }
+
+        $trim = trim($raw);
+
+        if ($trim === '') { return null; }
+
+        $normalized = str_replace(',', '.', $trim);
+
+        $valor = filter_var($normalized, FILTER_VALIDATE_FLOAT);
+
+        if ($valor === false || $valor <= 0 || !is_finite($valor)) {
+            return null;
+        }
+
+        return $valor;
+    }
+
+    private function panelOkPayload(string $tipoEtiqueta, float $monto, string $descripcion): array
+    {
+        return [
+            'tipo' => $tipoEtiqueta,
+            'monto' => $monto,
+            'monto_formateado' => '$' . number_format($monto, 2),
+            'fecha' => date('d/m/Y H:i:s'),
+            'descripcion' => $descripcion,
+        ];
+    }
+}
+</file>
+
+<file path="src/models/UseCase/ProcesarTransferenciaUseCase.php">
+<?php
+
+declare(strict_types=1);
+
+namespace App\Models\UseCase;
+
+use App\Models\Cuenta;
+use App\Models\Database;
+use App\Models\Roles\Administrador;
+use App\Models\Roles\Cliente;
+use App\Models\Usuario;
+
+class ProcesarTransferenciaUseCase extends Database
+{
+    public function execute(): void
+    {
+        if (empty($_SESSION['usuario_id'])) {
+
+            header('Location: index.php?route=login');
+
+            exit;
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+
+            header('Location: index.php?route=panel');
+
+            exit;
+        }
+
+        $db = $this->getConnection();
+
+        $usuario = $this->cargarUsuarioLogueado($db);
+
+        if ($usuario->getRol() !== 'cliente') {
+            $_SESSION['panel_error'] = 'Las transferencias solo están disponibles para clientes con cuenta.';
+
+            header('Location: index.php?route=panel');
+
+            exit;
+        }
+
+        $numeroDestino = trim((string) ($_POST['numero_cuenta_destino'] ?? ''));
+        $cedulaDestino = trim((string) ($_POST['cedula_destino'] ?? ''));
+        $descripcionPersonalizada = trim((string) ($_POST['descripcion_personalizada'] ?? ''));
+
+        if ($numeroDestino === '' || $cedulaDestino === '') {
+            $_SESSION['panel_error'] = 'Indique el número de cuenta destino y la cédula del titular.';
+
+            header('Location: index.php?route=panel');
+
+            exit;
+        }
+
+        $monto = $this->parseMontoPositivo($_POST['monto'] ?? null);
+
+        if ($monto === null) {
+            $_SESSION['panel_error'] = 'Ingrese un monto válido mayor que cero.';
+
+            header('Location: index.php?route=panel');
+
+            exit;
+        }
+
+        $cuentas = $this->cargarCuentasDeUsuario($db, $usuario->getId());
+
+        if ($cuentas === []) {
+            $_SESSION['panel_error'] = 'No tiene cuentas activas para operar.';
+
+            header('Location: index.php?route=panel');
+
+            exit;
+        }
+
+        $cuentaOrigen = $cuentas[0];
+
+        $destinoInfo = Cuenta::obtenerCuentaActivaConTitularPorNumero($numeroDestino);
+
+        if ($destinoInfo === null) {
+            $_SESSION['panel_error'] = 'No se encontró una cuenta activa con el número indicado.';
+
+            header('Location: index.php?route=panel');
+
+            exit;
+        }
+
+        $cuentaDestino = $destinoInfo['cuenta'];
+        $titularCedula = (string) $destinoInfo['titular_cedula'];
+        $titularNombres = (string) $destinoInfo['titular_nombres'];
+
+        if (!$this->cedulasEquivalentes($cedulaDestino, $titularCedula)) {
+            $_SESSION['panel_error'] = 'Los datos de la cuenta no coinciden con la cédula proporcionada';
+
+            header('Location: index.php?route=panel');
+
+            exit;
+
+        }
+
+        if ($cuentaOrigen->getId() === $cuentaDestino->getId()) {
+            $_SESSION['panel_error'] = 'No puede transferir fondos a su propia cuenta.';
+
+            header('Location: index.php?route=panel');
+
+            exit;
+        }
+
+        if (!$cuentaOrigen->validarSaldo($monto)) {
+            $_SESSION['panel_error'] = 'Saldo insuficiente para realizar la transferencia.';
+
+            header('Location: index.php?route=panel');
+
+            exit;
+        }
+
+        $ok = $cuentaOrigen->transferir(
+            $cuentaDestino,
+            $monto,
+            $descripcionPersonalizada,
+            $usuario->getNombres(),
+            $titularNombres
+        );
+
+        if (!$ok) {
+            $_SESSION['panel_error'] = 'No se pudo completar la transferencia. Intente nuevamente.';
+
+            header('Location: index.php?route=panel');
+
+            exit;
+        }
+
+        $_SESSION['panel_ok'] = [
+            'modal' => 'recibo_transferencia',
+            'beneficiario' => $titularNombres,
+            'numero_cuenta_destino' => $cuentaDestino->getNumeroCuenta(),
+            'monto' => $monto,
+            'monto_formateado' => '$' . number_format($monto, 2),
+            'fecha' => date('d/m/Y H:i:s'),
+            'descripcion_usuario' => $descripcionPersonalizada,
+        ];
+
+        header('Location: index.php?route=panel');
+
+        exit;
+    }
+
+    private function cargarUsuarioLogueado(\PDO $db): Usuario
+    {
+        $id = (int) $_SESSION['usuario_id'];
+
+        $stmt = $db->prepare(
+            'SELECT id, cedula, nombres, email, password, rol, estado
+             FROM usuarios
+             WHERE id = :id AND estado = 1
+             LIMIT 1'
+        );
+
+        $stmt->execute(['id' => $id]);
+        $row = $stmt->fetch();
+
+        if ($row === false) {
+            $_SESSION = [];
+            session_destroy();
+
+            header('Location: index.php?route=login');
+
+            exit;
+        }
+
+        $rol = (string) $row['rol'];
+
+        if ($rol === 'administrador') {
+
+            return new Administrador(
+                (int) $row['id'],
+                (string) $row['cedula'],
+                (string) $row['nombres'],
+                (string) $row['email'],
+                (string) $row['password'],
+                (bool) $row['estado']
+            );
+        }
+
+        return new Cliente(
+            (int) $row['id'],
+            (string) $row['cedula'],
+            (string) $row['nombres'],
+            (string) $row['email'],
+            (string) $row['password'],
+            (bool) $row['estado']
+        );
+    }
+
+    private function cargarCuentasDeUsuario(\PDO $db, int $usuarioId): array
+    {
+        $stmt = $db->prepare(
+            'SELECT id, usuario_id, numero_cuenta, saldo, estado
+             FROM cuentas
+             WHERE usuario_id = :uid AND estado = 1
+             ORDER BY id ASC'
+        );
+
+        $stmt->execute(['uid' => $usuarioId]);
+
+        $cuentas = [];
+
+        while ($row = $stmt->fetch()) {
+
+            $cuenta = new Cuenta(
+                (int) $row['id'],
+                (int) $row['usuario_id'],
+                (string) $row['numero_cuenta'],
+                (float) $row['saldo'],
+                (bool) $row['estado']
+            );
+
+            $cuenta->activarPersistencia();
+
+            $cuentas[] = $cuenta;
+        }
+
+        return $cuentas;
+    }
+
+    private function parseMontoPositivo(mixed $raw): ?float
+    {
+
+        if (!is_string($raw)) { return null; }
+
+        $trim = trim($raw);
+
+        if ($trim === '') { return null; }
+
+        $normalized = str_replace(',', '.', $trim);
+
+        $valor = filter_var($normalized, FILTER_VALIDATE_FLOAT);
+
+        if ($valor === false || $valor <= 0 || !is_finite($valor)) {
+            return null;
+        }
+
+        return $valor;
+    }
+
+    private function cedulasEquivalentes(string $ingresada, string $registrada): bool
+    {
+        $a = strtoupper(preg_replace('/\s+/', '', trim($ingresada)));
+        $b = strtoupper(preg_replace('/\s+/', '', trim($registrada)));
+
+        if ($a === '' || $b === '') { return false; }
+
+        if (strcasecmp($a, $b) === 0) { return true; }
+
+        $da = preg_replace('/\D/', '', $a);
+        $dbDigits = preg_replace('/\D/', '', $b);
+
+        return $da !== '' && $da === $dbDigits;
+    }
+}
+</file>
+
+<file path="src/views/login.php">
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Iniciar sesión — Bank Josstor</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./assets/css/styles.css">
+    <style>
+        .auth-wrap { flex: 1; display: flex; align-items: center; justify-content: center; padding: 40px 20px; min-height: 100vh; }
+        .auth-card { width: 100%; max-width: 420px; background: var(--card); border: 1px solid #334155; border-radius: 16px; padding: 32px; }
+        .auth-card h1 { font-size: 1.35rem; margin-bottom: 8px; }
+        .auth-card p.sub { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 24px; }
+        .auth-field { margin-bottom: 18px; }
+        .auth-field label { display: block; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 6px; }
+        .auth-field input, .auth-field select { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: var(--text); font-size: 0.95rem; box-sizing: border-box; }
+        .auth-field input:focus, .auth-field select:focus { outline: none; border-color: var(--accent); }
+        .auth-password-wrap { position: relative; width: 100%; }
+        .auth-password-wrap input { padding-right: 4.25rem; }
+        .auth-password-toggle {
+            position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+            border: none; background: transparent; color: var(--text-muted);
+            font-size: 0.75rem; font-weight: 600; font-family: inherit; cursor: pointer;
+            padding: 6px 8px; border-radius: 6px; line-height: 1.2;
+        }
+        .auth-password-toggle:hover { color: var(--accent); background: rgba(148, 163, 184, 0.12); }
+        .auth-password-toggle:focus { outline: none; color: var(--accent); box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.35); }
+        .auth-btn { width: 100%; padding: 12px; border: none; border-radius: 10px; background: var(--accent); color: var(--white); font-weight: 600; cursor: pointer; margin-top: 8px; }
+        .auth-btn:hover { filter: brightness(1.08); }
+        .auth-links { margin-top: 20px; text-align: center; font-size: 0.9rem; color: var(--text-muted); }
+        .auth-links a { color: var(--accent); text-decoration: none; }
+        .auth-links a:hover { text-decoration: underline; }
+        .msg-ok { background: rgba(16, 185, 129, 0.15); border: 1px solid var(--success); color: var(--success); padding: 12px; border-radius: 8px; margin-bottom: 18px; font-size: 0.9rem; }
+        .msg-err { background: rgba(244, 63, 94, 0.12); border: 1px solid var(--danger); color: var(--danger); padding: 12px; border-radius: 8px; margin-bottom: 18px; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+    <div class="auth-wrap">
+        <div class="auth-card">
+            <h1>Bank Josstor</h1>
+            <p class="sub">Inicie sesión con su correo, contraseña y rol.</p>
+
+            <?php if (!empty($_SESSION['registro_ok'])): ?>
+                <div class="msg-ok"><?php echo htmlspecialchars((string) $_SESSION['registro_ok'], ENT_QUOTES, 'UTF-8'); ?></div>
+                <?php unset($_SESSION['registro_ok']); ?>
+            <?php endif; ?>
+
+            <?php if ($error !== null): ?>
+                <div class="msg-err"><?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?></div>
+            <?php endif; ?>
+
+            <form method="post" action="index.php?route=login" autocomplete="on">
+                <div class="auth-field">
+                    <label for="email">Correo electrónico</label>
+                    <input type="email" id="email" name="email" required maxlength="120"
+                           placeholder="ejemplocorreo@gmail.com"
+                           value="<?php echo htmlspecialchars((string) ($_POST['email'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
+                </div>
+                <div class="auth-field">
+                    <label for="password">Contraseña</label>
+                    <div class="auth-password-wrap">
+                        <input type="password" id="password" name="password" required minlength="6" autocomplete="current-password"
+                               placeholder="••••••••">
+                        <button type="button" class="auth-password-toggle" id="toggle-password" data-target="password" aria-pressed="false" aria-label="Mostrar contraseña">Ver</button>
+                    </div>
+                </div>
+                <div class="auth-field">
+                    <label for="rol">Rol</label>
+                    <select id="rol" name="rol" required title="Seleccione su rol">
+                        <option value="" hidden disabled <?php echo empty($_POST['rol'] ?? '') ? 'selected' : ''; ?>>Seleccione su rol</option>
+                        <option value="cliente" <?php echo (($_POST['rol'] ?? '') === 'cliente') ? 'selected' : ''; ?>>Cliente</option>
+                        <option value="administrador" <?php echo (($_POST['rol'] ?? '') === 'administrador') ? 'selected' : ''; ?>>Administrador</option>
+                    </select>
+                </div>
+                <button type="submit" class="auth-btn">Entrar</button>
+            </form>
+
+            <div class="auth-links">
+                ¿No tiene cuenta? <a href="index.php?route=registro">Registrarse</a>
+            </div>
+        </div>
+    </div>
+    <script>
+        (function () {
+            document.querySelectorAll('.auth-password-toggle').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    var id = btn.getAttribute('data-target');
+                    var input = id ? document.getElementById(id) : null;
+                    if (!input) return;
+                    var visible = input.getAttribute('type') === 'text';
+                    input.setAttribute('type', visible ? 'password' : 'text');
+                    btn.setAttribute('aria-pressed', visible ? 'false' : 'true');
+                    btn.setAttribute('aria-label', visible ? 'Mostrar contraseña' : 'Ocultar contraseña');
+                    btn.textContent = visible ? 'Ver' : 'Ocultar';
+                });
+            });
+        })();
+    </script>
+</body>
+</html>
+</file>
+
+<file path="composer.json">
+{
+    "name": "windows11/banco-php",
+    "autoload": {
+        "psr-4": {
+            "App\\Models\\": "src/models/",
+            "App\\Controllers\\": "src/controllers/",
+            "App\\Config\\": "src/config/",
+            "App\\Socket\\": "src/Socket/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Victor Ghelfi",
+            "email": "ghelfivictor3@gmail.com"
+        }
+    ],
+    "require": {
+        "cboden/ratchet": "^0.4.4"
+    }
+}
+</file>
+
+<file path="src/models/Database.php">
+<?php
+
+declare(strict_types=1);
+
+namespace App\Models;
+
+use PDO;
+use PDOException;
+
+abstract class Database
+{
+    private const DSN = 'mysql:host=localhost;dbname=banco_php;charset=utf8mb4';
+
+    private static ?PDO $sharedPdo = null;
+
+    protected ?PDO $pdo = null;
+
+    protected function getConnection(): PDO
+    {
+        if (self::$sharedPdo === null) {
+            self::$sharedPdo = new PDO(self::DSN, 'root', '', [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES => false,
+            ]);
+        }
+
+        $this->pdo = self::$sharedPdo;
+
+        return self::$sharedPdo;
+    }
+    
+    protected function activarPersistencia(): void
+    {
+        $this->pdo = $this->getConnection();
+    }
+}
+</file>
+
+<file path="src/views/registro.php">
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registro — Bank Josstor</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./assets/css/styles.css">
+</head>
+<body>
+    <div class="auth-wrap">
+        <div class="auth-card">
+            <h1>Crear cuenta</h1>
+
+            <?php if ($error !== null): ?>
+                <div class="msg-err"><?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?></div>
+            <?php endif; ?>
+
+            <form method="post" action="index.php?route=registro" autocomplete="on">
+                <div class="auth-field">
+                    <label for="cedula">Cédula</label>
+                    <input type="text" id="cedula" name="cedula" required maxlength="20"
+                           placeholder="V-12345678"
+                           value="<?php echo htmlspecialchars((string) ($_POST['cedula'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
+                </div>
+                <div class="auth-field">
+                    <label for="nombres">Nombre completo</label>
+                    <input type="text" id="nombres" name="nombres" required maxlength="120"
+                           placeholder="Juan Pérez"
+                           value="<?php echo htmlspecialchars((string) ($_POST['nombres'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
+                </div>
+                <div class="auth-field">
+                    <label for="email">Correo electrónico</label>
+                    <input type="email" id="email" name="email" required maxlength="120"
+                           placeholder="ejemplocorreo@gmail.com"
+                           value="<?php echo htmlspecialchars((string) ($_POST['email'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
+                </div>
+                <div class="auth-field">
+                    <label for="password">Contraseña</label>
+                    <div class="auth-password-wrap">
+                        <input type="password" id="password" name="password" required minlength="6" autocomplete="new-password"
+                               placeholder="••••••••">
+                        <button type="button" class="auth-password-toggle" data-target="password" aria-pressed="false" aria-label="Mostrar contraseña">Ver</button>
+                    </div>
+                    <p class="hint">Mínimo 6 caracteres.</p>
+                </div>
+                <div class="auth-field">
+                    <label for="rol">Rol</label>
+                    <select id="rol" name="rol" required title="Seleccione su rol">
+                        <option value="" hidden disabled <?php echo empty($_POST['rol'] ?? '') ? 'selected' : ''; ?>>Seleccione su rol</option>
+                        <option value="cliente" <?php echo (($_POST['rol'] ?? '') === 'cliente') ? 'selected' : ''; ?>>Cliente</option>
+                        <option value="administrador" <?php echo (($_POST['rol'] ?? '') === 'administrador') ? 'selected' : ''; ?>>Administrador</option>
+                    </select>
+                </div>
+                <button type="submit" class="auth-btn">Registrarse</button>
+            </form>
+
+            <div class="auth-links">
+                ¿Ya tiene cuenta? <a href="index.php?route=login">Iniciar sesión</a>
+            </div>
+        </div>
+    </div>
+    <script>
+        (function () {
+            document.querySelectorAll('.auth-password-toggle').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    var id = btn.getAttribute('data-target');
+                    var input = id ? document.getElementById(id) : null;
+                    if (!input) return;
+                    var visible = input.getAttribute('type') === 'text';
+                    input.setAttribute('type', visible ? 'password' : 'text');
+                    btn.setAttribute('aria-pressed', visible ? 'false' : 'true');
+                    btn.setAttribute('aria-label', visible ? 'Mostrar contraseña' : 'Ocultar contraseña');
+                    btn.textContent = visible ? 'Ver' : 'Ocultar';
+                });
+            });
+        })();
+    </script>
+</body>
+</html>
+</file>
+
+<file path="README.md">
+# Sistema Bancario Simulado en PHP
+
+Proyecto demostrativo orientado a objetos con estructura tipo MVC, autoloading PSR-4 mediante Composer y base de infraestructura WebSocket con Ratchet.
+
+## Estructura actual del proyecto
+
+```text
+BANCO - PHP/
+├── bin/
+│   └── socket-server.php
+├── src/
+│   ├── controllers/
+│   │   └── BancoController.php
+│   ├── models/
+│   │   ├── Cuenta.php
+│   │   ├── Movimiento.php
+│   │   ├── Usuario.php
+│   │   └── Roles/
+│   │       ├── Administrador.php
+│   │       └── Cliente.php
+│   ├── views/
+│   │   └── banco_view.php
+│   └── Socket/
+│       └── Notificador.php
+├── vendor/
+├── composer.json
+├── composer.lock
+└── index.php
+```
+
+## Autoloading y Namespaces
+
+El proyecto utiliza Composer con mapeo PSR-4:
+
+```json
+"autoload": {
+  "psr-4": {
+    "App\\": "src/"
+  }
+}
+```
+
+Namespaces principales:
+
+- `App\Controllers` para controladores en `src/controllers/`
+- `App\Models` para modelos base en `src/models/`
+- `App\Models\Roles` para roles en `src/models/Roles/`
+- `App\Socket` para infraestructura WebSocket en `src/Socket/`
+
+El punto de entrada `index.php` carga solo `vendor/autoload.php` y luego instancia el controlador con `use App\Controllers\BancoController;`.
+
+## Capa de dominio (POO)
+
+### Jerarquia de clases
+
+- `Usuario` (abstracta):
+  - Centraliza atributos comunes (`id`, `cedula`, `nombres`, `email`, `password`, `rol`, `estado`).
+  - Define el metodo polimorfico `obtenerPermisos()`.
+- `Roles\Cliente` extiende `Usuario`:
+  - Implementa permisos operativos del cliente.
+- `Roles\Administrador` extiende `Usuario`:
+  - Implementa permisos administrativos.
+
+### Flujo funcional
+
+- `Cuenta` se asocia a `Usuario` por `usuario_id`.
+- `Cuenta` registra objetos `Movimiento` en memoria al depositar, retirar o transferir.
+- `transferir(Cuenta $destino, float $monto)` valida estados/saldo y registra movimientos de salida/entrada.
+
+## Simulacion actual (controlador + vista)
+
+`BancoController`:
+
+- Crea instancias de administrador y cliente.
+- Crea cuenta origen y destino.
+- Simula un deposito y una transferencia.
+- Expone a la vista variables de estado y mensaje:
+  - `$depositoExitoso`, `$transferenciaExitosa`
+  - `$depositoEstado`, `$transferenciaEstado`
+  - `$depositoMensaje`, `$transferenciaMensaje`
+
+`banco_view.php` renderiza los datos y muestra los mensajes de la simulacion en la seccion de trazabilidad de movimientos.
+
+## Infraestructura WebSocket (nuevo)
+
+### 1) Componente de mensajes
+
+Archivo: `src/Socket/Notificador.php`
+
+- Namespace: `App\Socket`
+- Implementa `Ratchet\MessageComponentInterface`
+- Logs implementados:
+  - `onOpen`: nueva conexion y `resourceId`
+  - `onMessage`: mensaje recibido y `resourceId`
+  - `onClose`: cierre de conexion
+  - `onError`: error de conexion y cierre del socket
+
+### 2) Script del servidor
+
+Archivo: `bin/socket-server.php`
+
+- Carga `vendor/autoload.php`
+- Levanta `IoServer` + `HttpServer` + `WsServer`
+- Usa `new App\Socket\Notificador()`
+- Escucha en el puerto `8080`
+- Imprime al iniciar:
+  - `Servidor de WebSockets iniciado en el puerto 8080...`
+
+## Instalacion
+
+```bash
+composer install
+```
+
+Si realizas cambios en clases/namespaces, regenera autoload:
+
+```bash
+composer dump-autoload
+```
+
+### Servidor WebSocket
+
+En otra terminal:
+
+```bash
+php bin/socket-server.php
+```
+
+TRUNCATE TABLE movimientos;
+</file>
+
+<file path="src/models/Movimiento.php">
+<?php
+
+declare(strict_types=1);
+
+namespace App\Models;
+
+class Movimiento extends Database
+{
+    private int $id;
+    private int $cuenta_id;
+    private string $tipo;
+    private float $monto;
+    private string $fecha;
+    private string $descripcion;
+
+    public function __construct(int $id, int $cuenta_id, string $tipo, float $monto, string $fecha, string $descripcion)
+    {
+        $this->id = $id;
+        $this->cuenta_id = $cuenta_id;
+        $this->tipo = $tipo;
+        $this->monto = $monto;
+        $this->fecha = $fecha;
+        $this->descripcion = $descripcion;
+    }
+
+    public function getId(): int { return $this->id; }
+    
+    public function setId(int $id): void { $this->id = $id; }
+
+
+    public function getCuentaId(): int { return $this->cuenta_id; }
+
+    public function setCuentaId(int $cuenta_id): void { $this->cuenta_id = $cuenta_id; }
+
+
+    public function getTipo(): string { return $this->tipo; }
+
+    public function setTipo(string $tipo): void { $this->tipo = $tipo; }
+
+
+    public function getMonto(): float { return $this->monto; }
+
+    public function setMonto(float $monto): void { $this->monto = $monto; }
+
+
+    public function getFecha(): string { return $this->fecha; }
+
+    public function setFecha(string $fecha): void { $this->fecha = $fecha; }
+
+
+    public function getDescripcion(): string { return $this->descripcion; }
+
+    public function setDescripcion(string $descripcion): void { $this->descripcion = $descripcion; }
+}
+</file>
+
+<file path="src/models/Roles/Administrador.php">
+<?php
+
+declare(strict_types=1);
+
+namespace App\Models\Roles;
+
+use App\Models\Usuario;
+
+class Administrador extends Usuario
+{
+    public function __construct(
+        int $id,
+        string $cedula,
+        string $nombres,
+        string $email,
+        string $password,
+        bool $estado = true
+    ) {
+        parent::__construct($id, $cedula, $nombres, $email, $password, 'administrador', $estado);
+    }
+    
+    public function obtenerPermisos(): array
+    {
+        return [
+            'gestionar_usuarios',
+            'gestionar_cuentas',
+            'aprobar_operaciones',
+            'ver_reportes'
+        ];
+    }
+}
+</file>
+
+<file path="src/models/Usuario.php">
+<?php
+
+declare(strict_types=1);
+
+namespace App\Models;
+
+abstract class Usuario extends Database
+{
+    protected int $id;
+    protected string $cedula;
+    protected string $nombres;
+    protected string $email;
+    protected string $password;
+    protected string $rol;
+    protected bool $estado;
+
+    public function __construct(
+        int $id,
+        string $cedula,
+        string $nombres,
+        string $email,
+        string $password,
+        string $rol,
+        bool $estado = true
+    ) {
+        $this->id = $id;
+        $this->cedula = $cedula;
+        $this->nombres = $nombres;
+        $this->email = $email;
+        $this->password = $password;
+        $this->rol = $rol;
+        $this->estado = $estado;
+    }
+
+    abstract public function obtenerPermisos(): array;
+    
+
+    public function getId(): int { return $this->id; }
+
+    public function setId(int $id): void { $this->id = $id; }
+
+
+    public function getCedula(): string { return $this->cedula; }
+
+    public function setCedula(string $cedula): void { $this->cedula = $cedula; }
+
+
+    public function getNombres(): string { return $this->nombres; }
+
+    public function setNombres(string $nombres): void { $this->nombres = $nombres; }
+
+
+    public function getEmail(): string { return $this->email; }
+
+    public function setEmail(string $email): void { $this->email = $email; }
+
+
+    public function getPassword(): string { return $this->password; }
+
+    public function setPassword(string $password): void { $this->password = $password; }
+
+
+    public function getRol(): string { return $this->rol; }
+
+    public function setRol(string $rol): void { $this->rol = $rol; }
+
+
+    public function getEstado(): bool { return $this->estado; }
+
+    public function setEstado(bool $estado): void { $this->estado = $estado; }
+}
+</file>
+
+<file path="assets/css/styles.css">
+:root {
+  --bg: #0f172a;
+  --sidebar: #1e293b;
+  --card: #1e293b;
+  --accent: #6366f1;
+  --success: #10b981;
+  --danger: #f43f5e;
+  --text: #f8fafc;
+  --text-muted: #94a3b8;
+  --white: #ffffff;
+  --accent: #6366f1;
+  --success: #10b981;
+  --danger: #ef4444;
+  --warning: #f59e0b;
+  --card: #1e293b;
+  --bg-dark: #0f172a;
+  --text: #f1f5f9;
+  --text-muted: #94a3b8;
+  --white: #ffffff;
+  --border: #334155;
+  --accent: #6366f1;
+  --success: #10b981;
+  --danger: #ef4444;
+  --warning: #f59e0b;
+  --card: #1e293b;
+  --bg-dark: #0f172a;
+  --text: #f1f5f9;
+  --text-muted: #94a3b8;
+  --white: #ffffff;
+  --border: #334155;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: "Plus Jakarta Sans", sans-serif;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  display: flex;
+  min-height: 100vh;
+}
+
+/* Sidebar - Info del Administrador */
+.sidebar {
+  width: 300px;
+  background: var(--sidebar);
+  padding: 30px;
+  border-right: 1px solid #334155;
+  display: flex;
+  flex-direction: column;
+}
+.admin-card {
+  background: rgba(99, 102, 241, 0.1);
+  padding: 20px;
+  border-radius: 15px;
+  border: 1px solid var(--accent);
+  margin-bottom: 30px;
+}
+.admin-card h4 {
+  font-size: 0.75rem;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  margin-bottom: 12px;
+}
+.admin-data {
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+.admin-data b {
+  color: var(--text);
+}
+
+/* Main Content */
+.main-view {
+  flex: 1;
+  padding: 40px;
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
+  overflow-y: auto;
+}
+.top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 40px;
+}
+.client-tag {
+  background: #334155;
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  display: inline-block;
+  margin-top: 5px;
+}
+
+.status-badge {
+  background: rgba(16, 185, 129, 0.2);
+  color: var(--success);
+  padding: 5px 15px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+/* Cards de Cuentas */
+.accounts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 25px;
+  margin-bottom: 40px;
+}
+.bank-card {
+  background: var(--card);
+  border-radius: 24px;
+  padding: 30px;
+  border: 1px solid #334155;
+  transition: transform 0.3s ease;
+  position: relative;
+}
+.bank-card:hover {
+  transform: translateY(-5px);
+  border-color: var(--accent);
+}
+.balance-label {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.balance-value {
+  font-size: 2.8rem;
+  font-weight: 800;
+  margin: 15px 0;
+  color: var(--white);
+}
+.card-footer {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 20px;
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+/* Logs de Movimientos */
+.activity-log {
+  background: var(--card);
+  border-radius: 24px;
+  padding: 30px;
+  border: 1px solid #334155;
+}
+.log-entry {
+  display: flex;
+  align-items: center;
+  padding: 18px;
+  background: rgba(15, 23, 42, 0.4);
+  border-radius: 16px;
+  margin-bottom: 12px;
+  border: 1px solid transparent;
+}
+.log-entry.success {
+  border-left: 4px solid var(--success);
+}
+.log-entry.error {
+  border-left: 4px solid var(--danger);
+}
+.log-info {
+  flex: 1;
+  margin-left: 15px;
+}
+.log-info b {
+  display: block;
+  font-size: 1rem;
+}
+.log-info span {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "Plus Jakarta Sans", sans-serif;
+  background: radial-gradient(circle at 10% 30%, #0b1120, #030712);
+  color: var(--text);
+  display: flex;
+  min-height: 100vh;
+}
+
+/* Sidebar */
+.sidebar {
+  width: 280px;
+  background: rgba(15, 23, 42, 0.8);
+  backdrop-filter: blur(12px);
+  border-right: 1px solid #334155;
+  padding: 28px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.admin-card {
+  background: rgba(99, 102, 241, 0.1);
+  border-radius: 20px;
+  padding: 18px;
+  border: 1px solid #334155;
+}
+
+.admin-card h4 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+  margin-bottom: 15px;
+}
+
+.admin-data p {
+  font-size: 0.85rem;
+  margin: 8px 0;
+  word-break: break-word;
+}
+
+/* Main content */
+.main-view {
+  flex: 1;
+  padding: 28px 36px;
+  overflow-y: auto;
+}
+
+.top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 40px;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.client-tag {
+  background: #334155;
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 40px;
+  font-size: 0.8rem;
+  margin-top: 8px;
+}
+
+.status-badge {
+  background: #10b98120;
+  color: var(--success);
+  padding: 6px 14px;
+  border-radius: 40px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+/* Accounts grid */
+.accounts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 24px;
+  margin-bottom: 48px;
+}
+
+.bank-card {
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  border-radius: 24px;
+  padding: 24px;
+  border: 1px solid #334155;
+}
+
+.balance-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.balance-value {
+  font-size: 2.2rem;
+  font-weight: 800;
+  margin: 12px 0 20px;
+  color: var(--accent);
+}
+
+.card-footer {
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid #334155;
+  padding-top: 16px;
+  font-size: 0.8rem;
+}
+
+/* Quick operations section */
+.quick-ops-section {
+  margin-bottom: 40px;
+}
+
+.quick-ops-section h3 {
+  font-size: 1.2rem;
+  margin-bottom: 18px;
+  font-weight: 600;
+}
+
+.quick-ops-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+.quick-op-card {
+  background: var(--card);
+  border: 1px solid #334155;
+  border-radius: 16px;
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.quick-op-card .op-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.quick-op-card input[type="text"],
+.quick-op-card input[type="number"],
+.quick-op-card textarea {
+  width: 100%;
+  padding: 11px 14px;
+  border-radius: 10px;
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: var(--text);
+  font-size: 0.95rem;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.quick-op-card textarea {
+  min-height: 72px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.quick-op-card input:focus,
+.quick-op-card textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.quick-op-btn {
+  padding: 11px 16px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--white);
+  font-weight: 600;
+  font-size: 0.9rem;
+  font-family: inherit;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.quick-op-btn:hover {
+  filter: brightness(1.08);
+}
+
+/* Transfer section */
+.transfer-section {
+  --transfer-amber: #e8b565;
+  --transfer-amber-soft: rgba(232, 181, 101, 0.16);
+  --transfer-amber-border: rgba(232, 181, 101, 0.38);
+  --transfer-amber-muted: rgba(232, 181, 101, 0.55);
+  --transfer-btn-top: #e8b565;
+  --transfer-btn-bottom: #b45309;
+
+  margin-bottom: 44px;
+  padding: 26px 28px 28px;
+  border-radius: 20px;
+  border: 1px solid var(--transfer-amber-border);
+  background: linear-gradient(
+    165deg,
+    rgba(232, 181, 101, 0.09) 0%,
+    rgba(15, 23, 42, 0.55) 42%,
+    var(--card) 100%
+  );
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(232, 181, 101, 0.08);
+}
+
+.transfer-section h3 {
+  font-size: 1.28rem;
+  font-weight: 700;
+  margin: 0 0 8px;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.transfer-section__lead {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin: 0 0 22px;
+  max-width: 52ch;
+  line-height: 1.5;
+}
+
+.transfer-section__lead strong {
+  color: var(--transfer-amber);
+  font-weight: 600;
+}
+
+.transfer-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: min(640px, 100%);
+}
+
+.transfer-card .op-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--transfer-amber);
+}
+
+.transfer-card input[type="text"],
+.transfer-card textarea {
+  width: 100%;
+  padding: 11px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(232, 181, 101, 0.22);
+  background: rgba(15, 23, 42, 0.75);
+  color: var(--text);
+  font-size: 0.95rem;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.transfer-card textarea {
+  min-height: 78px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.transfer-card input:focus,
+.transfer-card textarea:focus {
+  outline: none;
+  border-color: var(--transfer-amber-muted);
+  box-shadow: 0 0 0 2px rgba(232, 181, 101, 0.12);
+}
+
+.transfer-btn {
+  padding: 12px 22px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(
+    135deg,
+    var(--transfer-btn-top) 0%,
+    var(--transfer-btn-bottom) 100%
+  );
+  color: #1a1206;
+  font-weight: 700;
+  font-size: 0.9rem;
+  font-family: inherit;
+  cursor: pointer;
+  align-self: flex-start;
+  box-shadow: 0 8px 22px rgba(180, 83, 9, 0.28);
+}
+
+.transfer-btn:hover {
+  filter: brightness(1.07);
+  box-shadow: 0 10px 26px rgba(180, 83, 9, 0.35);
+}
+
+/* Activity log */
+.activity-log {
+  background: rgba(15, 23, 42, 0.45);
+  border-radius: 24px;
+  padding: 24px;
+  margin-top: 20px;
+}
+
+.log-entry {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 18px;
+  padding: 16px 20px;
+  margin-bottom: 12px;
+  transition: 0.2s;
+  border-left: 2px solid transparent;
+}
+
+.log-entry.success {
+  border-left-color: var(--success);
+}
+
+.log-entry.error {
+  border-left-color: var(--danger);
+}
+
+.log-entry.transfer {
+  border-left-color: #e8b565;
+}
+
+.log-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.log-info {
+  flex: 1;
+}
+
+.log-info b {
+  font-size: 1rem;
+}
+
+/* Botón consultar operaciones */
+.btn-consultar-operaciones {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 20px;
+  padding: 14px 24px;
+  border: none;
+  border-radius: 14px;
+  background: linear-gradient(
+    135deg,
+    rgba(99, 102, 241, 0.95) 0%,
+    rgba(79, 70, 229, 0.95) 100%
+  );
+  color: var(--white);
+  font-weight: 700;
+  font-size: 0.92rem;
+  font-family: inherit;
+  cursor: pointer;
+  box-shadow: 0 10px 28px rgba(99, 102, 241, 0.28);
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    filter 0.2s ease;
+}
+
+.btn-consultar-operaciones:hover {
+  filter: brightness(1.06);
+  box-shadow: 0 14px 36px rgba(99, 102, 241, 0.38);
+  transform: translateY(-1px);
+}
+
+.btn-consultar-operaciones svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+/* Modal styles (Panel y Historial) */
+.panel-modal-root,
+.history-modal-root {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 0.28s ease,
+    visibility 0.28s ease;
+}
+
+.panel-modal-root.is-open,
+.history-modal-root.is-open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.panel-modal-backdrop,
+.history-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(6px);
+}
+
+.panel-modal-dialog {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  background: var(--card);
+  border: 1px solid #334155;
+  border-radius: 20px;
+  padding: 28px 26px 24px;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
+  transform: translateY(16px) scale(0.98);
+  opacity: 0;
+  transition:
+    transform 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.28s ease;
+}
+
+.panel-modal-root.is-open .panel-modal-dialog,
+.history-modal-root.is-open .history-modal-dialog {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+}
+
+.panel-modal-dialog--success {
+  border-color: rgba(16, 185, 129, 0.45);
+}
+
+.panel-modal-dialog--error {
+  border-color: rgba(244, 63, 94, 0.45);
+}
+
+.panel-modal-dialog--transfer-receipt {
+  border-color: rgba(232, 181, 101, 0.42);
+  max-width: 440px;
+  box-shadow:
+    0 24px 48px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(232, 181, 101, 0.06) inset;
+}
+
+.panel-modal-dialog--transfer-receipt .panel-modal-icon {
+  background: rgba(232, 181, 101, 0.2);
+  color: #f0c97c;
+}
+
+.panel-modal-dialog--transfer-receipt .panel-modal-title {
+  color: #f5e6d4;
+}
+
+.panel-modal-dialog--transfer-receipt .panel-modal-subtitle {
+  color: #e8b565;
+}
+
+.panel-modal-dialog--transfer-receipt .panel-modal-meta dt {
+  color: rgba(232, 181, 101, 0.75);
+}
+
+.panel-modal-dialog--transfer-receipt #transfer-receipt-monto {
+  color: #f0c97c;
+  font-weight: 700;
+}
+
+.panel-modal-dialog--transfer-receipt .panel-modal-btn {
+  background: linear-gradient(135deg, #e8b565 0%, #b45309 100%);
+  color: #1a1206;
+  box-shadow: 0 8px 20px rgba(180, 83, 9, 0.35);
+}
+
+.panel-modal-subtitle {
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--accent);
+  margin: 0 0 14px;
+}
+
+.panel-modal-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.panel-modal-dialog--success .panel-modal-icon {
+  background: rgba(16, 185, 129, 0.18);
+  color: var(--success);
+}
+
+.panel-modal-dialog--error .panel-modal-icon {
+  background: rgba(244, 63, 94, 0.18);
+  color: var(--danger);
+}
+
+.panel-modal-icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+.panel-modal-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin: 0 0 6px;
+  letter-spacing: -0.02em;
+}
+
+.panel-modal-dialog--success .panel-modal-title {
+  color: var(--success);
+}
+
+.panel-modal-dialog--error .panel-modal-title {
+  color: var(--danger);
+}
+
+.panel-modal-meta {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0 16px;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.panel-modal-meta dt {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.panel-modal-meta dd {
+  margin: 0;
+  color: var(--text);
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.panel-modal-desc {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0 0 22px;
+}
+
+.panel-modal-msg {
+  font-size: 0.95rem;
+  color: var(--text);
+  line-height: 1.55;
+  margin: 0 0 22px;
+}
+
+.panel-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.panel-modal-btn {
+  padding: 10px 20px;
+  border-radius: 10px;
+  border: none;
+  font-weight: 600;
+  font-size: 0.9rem;
+  font-family: inherit;
+  cursor: pointer;
+  background: var(--accent);
+  color: var(--white);
+}
+
+.panel-modal-btn:hover {
+  filter: brightness(1.08);
+}
+
+.panel-modal-root[hidden],
+.history-modal-root[hidden] {
+  display: none !important;
+}
+
+/* History Modal specific */
+.history-modal-dialog {
+  position: relative;
+  width: 100%;
+  max-width: min(920px, 96vw);
+  max-height: min(86vh, 720px);
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid #334155;
+  border-radius: 20px;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
+  transform: translateY(16px) scale(0.98);
+  opacity: 0;
+  transition:
+    transform 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.28s ease;
+}
+
+.history-modal-header {
+  flex-shrink: 0;
+  padding: 22px 24px 18px;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.85);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16px;
+}
+
+.history-modal-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.history-modal-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.history-modal-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.history-filter-btn {
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    color 0.2s,
+    background 0.2s;
+}
+
+.history-filter-btn:hover {
+  color: var(--text);
+  border-color: #475569;
+}
+
+.history-filter-btn.is-active {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.history-modal-close {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.6);
+  color: var(--text-muted);
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+}
+
+.history-modal-close:hover {
+  color: var(--text);
+  background: rgba(15, 23, 42, 0.95);
+}
+
+.history-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 20px 22px;
+}
+
+.history-modal-table-head {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) minmax(100px, 0.85fr) minmax(
+      160px,
+      2fr
+    ) minmax(90px, 0.75fr);
+  gap: 12px;
+  padding: 10px 14px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  border-bottom: 1px solid rgba(51, 65, 85, 0.6);
+  margin-bottom: 8px;
+}
+
+.history-modal-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) minmax(100px, 0.85fr) minmax(
+      160px,
+      2fr
+    ) minmax(90px, 0.75fr);
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  background: rgba(15, 23, 42, 0.45);
+  border-radius: 14px;
+  border: 1px solid rgba(51, 65, 85, 0.5);
+  margin-bottom: 8px;
+}
+
+.history-modal-row[hidden] {
+  display: none !important;
+}
+
+.history-modal-row-fecha {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.history-modal-row-tipo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+
+.history-modal-row-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.95rem;
+  flex-shrink: 0;
+}
+
+.history-modal-row-icon--transfer {
+  background: rgba(232, 181, 101, 0.16) !important;
+  color: #e8b565 !important;
+}
+
+.history-modal-row-desc {
+  font-size: 0.85rem;
+  color: var(--text);
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.history-modal-row-monto {
+  font-weight: 700;
+  font-size: 0.95rem;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.history-monto--suma {
+  color: var(--success);
+}
+
+.history-monto--resta {
+  color: var(--danger);
+}
+
+.history-monto--neutro {
+  color: var(--text-muted);
+}
+
+/* Log icon transfer */
+.log-icon--transfer {
+  background: rgba(232, 181, 101, 0.16) !important;
+  color: #e8b565 !important;
+}
+
+/* Media queries */
+@media (max-width: 768px) {
+  body {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid #334155;
+  }
+
+  .main-view {
+    padding: 20px;
+  }
+
+  .top-bar {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 640px) {
+  .history-modal-table-head {
+    display: none;
+  }
+
+  .history-modal-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .history-modal-row-monto {
+    text-align: left;
+  }
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "Plus Jakarta Sans", sans-serif;
+  background: radial-gradient(circle at 10% 30%, #0b1120, #030712);
+  color: var(--text);
+  display: flex;
+  min-height: 100vh;
+}
+
+/* Sidebar */
+.sidebar {
+  width: 280px;
+  background: rgba(15, 23, 42, 0.8);
+  backdrop-filter: blur(12px);
+  border-right: 1px solid #334155;
+  padding: 28px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.admin-card {
+  background: rgba(99, 102, 241, 0.1);
+  border-radius: 20px;
+  padding: 18px;
+  border: 1px solid #334155;
+}
+
+.admin-card h4 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+  margin-bottom: 15px;
+}
+
+.admin-data p {
+  font-size: 0.85rem;
+  margin: 8px 0;
+  word-break: break-word;
+}
+
+/* Main content */
+.main-view {
+  flex: 1;
+  padding: 28px 36px;
+  overflow-y: auto;
+}
+
+.top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 40px;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.client-tag {
+  background: #334155;
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 40px;
+  font-size: 0.8rem;
+  margin-top: 8px;
+}
+
+.status-badge {
+  background: #10b98120;
+  color: var(--success);
+  padding: 6px 14px;
+  border-radius: 40px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+/* Accounts grid */
+.accounts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 24px;
+  margin-bottom: 48px;
+}
+
+.bank-card {
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  border-radius: 24px;
+  padding: 24px;
+  border: 1px solid #334155;
+}
+
+.balance-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.balance-value {
+  font-size: 2.2rem;
+  font-weight: 800;
+  margin: 12px 0 20px;
+  color: var(--accent);
+}
+
+.card-footer {
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid #334155;
+  padding-top: 16px;
+  font-size: 0.8rem;
+}
+
+/* Quick operations section */
+.quick-ops-section {
+  margin-bottom: 40px;
+}
+
+.quick-ops-section h3 {
+  font-size: 1.2rem;
+  margin-bottom: 18px;
+  font-weight: 600;
+}
+
+.quick-ops-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+.quick-op-card {
+  background: var(--card);
+  border: 1px solid #334155;
+  border-radius: 16px;
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.quick-op-card .op-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.quick-op-card input[type="text"],
+.quick-op-card input[type="number"],
+.quick-op-card textarea {
+  width: 100%;
+  padding: 11px 14px;
+  border-radius: 10px;
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: var(--text);
+  font-size: 0.95rem;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.quick-op-card textarea {
+  min-height: 72px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.quick-op-card input:focus,
+.quick-op-card textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.quick-op-btn {
+  padding: 11px 16px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--white);
+  font-weight: 600;
+  font-size: 0.9rem;
+  font-family: inherit;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.quick-op-btn:hover {
+  filter: brightness(1.08);
+}
+
+/* Transfer section */
+.transfer-section {
+  --transfer-amber: #e8b565;
+  --transfer-amber-soft: rgba(232, 181, 101, 0.16);
+  --transfer-amber-border: rgba(232, 181, 101, 0.38);
+  --transfer-amber-muted: rgba(232, 181, 101, 0.55);
+  --transfer-btn-top: #e8b565;
+  --transfer-btn-bottom: #b45309;
+
+  margin-bottom: 44px;
+  padding: 26px 28px 28px;
+  border-radius: 20px;
+  border: 1px solid var(--transfer-amber-border);
+  background: linear-gradient(
+    165deg,
+    rgba(232, 181, 101, 0.09) 0%,
+    rgba(15, 23, 42, 0.55) 42%,
+    var(--card) 100%
+  );
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(232, 181, 101, 0.08);
+}
+
+.transfer-section h3 {
+  font-size: 1.28rem;
+  font-weight: 700;
+  margin: 0 0 8px;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.transfer-section__lead {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin: 0 0 22px;
+  max-width: 52ch;
+  line-height: 1.5;
+}
+
+.transfer-section__lead strong {
+  color: var(--transfer-amber);
+  font-weight: 600;
+}
+
+.transfer-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: min(640px, 100%);
+}
+
+.transfer-card .op-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--transfer-amber);
+}
+
+.transfer-card input[type="text"],
+.transfer-card textarea {
+  width: 100%;
+  padding: 11px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(232, 181, 101, 0.22);
+  background: rgba(15, 23, 42, 0.75);
+  color: var(--text);
+  font-size: 0.95rem;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.transfer-card textarea {
+  min-height: 78px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.transfer-card input:focus,
+.transfer-card textarea:focus {
+  outline: none;
+  border-color: var(--transfer-amber-muted);
+  box-shadow: 0 0 0 2px rgba(232, 181, 101, 0.12);
+}
+
+.transfer-btn {
+  padding: 12px 22px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(
+    135deg,
+    var(--transfer-btn-top) 0%,
+    var(--transfer-btn-bottom) 100%
+  );
+  color: #1a1206;
+  font-weight: 700;
+  font-size: 0.9rem;
+  font-family: inherit;
+  cursor: pointer;
+  align-self: flex-start;
+  box-shadow: 0 8px 22px rgba(180, 83, 9, 0.28);
+}
+
+.transfer-btn:hover {
+  filter: brightness(1.07);
+  box-shadow: 0 10px 26px rgba(180, 83, 9, 0.35);
+}
+
+/* Activity log */
+.activity-log {
+  background: rgba(15, 23, 42, 0.45);
+  border-radius: 24px;
+  padding: 24px;
+  margin-top: 20px;
+}
+
+.log-entry {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 18px;
+  padding: 16px 20px;
+  margin-bottom: 12px;
+  transition: 0.2s;
+  border-left: 2px solid transparent;
+}
+
+.log-entry.success {
+  border-left-color: var(--success);
+}
+
+.log-entry.error {
+  border-left-color: var(--danger);
+}
+
+.log-entry.transfer {
+  border-left-color: #e8b565;
+}
+
+.log-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.log-info {
+  flex: 1;
+}
+
+.log-info b {
+  font-size: 1rem;
+}
+
+/* Botón consultar operaciones */
+.btn-consultar-operaciones {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 20px;
+  padding: 14px 24px;
+  border: none;
+  border-radius: 14px;
+  background: linear-gradient(
+    135deg,
+    rgba(99, 102, 241, 0.95) 0%,
+    rgba(79, 70, 229, 0.95) 100%
+  );
+  color: var(--white);
+  font-weight: 700;
+  font-size: 0.92rem;
+  font-family: inherit;
+  cursor: pointer;
+  box-shadow: 0 10px 28px rgba(99, 102, 241, 0.28);
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    filter 0.2s ease;
+}
+
+.btn-consultar-operaciones:hover {
+  filter: brightness(1.06);
+  box-shadow: 0 14px 36px rgba(99, 102, 241, 0.38);
+  transform: translateY(-1px);
+}
+
+.btn-consultar-operaciones svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+/* Modal styles (Panel y Historial) */
+.panel-modal-root,
+.history-modal-root {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 0.28s ease,
+    visibility 0.28s ease;
+}
+
+.panel-modal-root.is-open,
+.history-modal-root.is-open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.panel-modal-backdrop,
+.history-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(6px);
+}
+
+.panel-modal-dialog {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  background: var(--card);
+  border: 1px solid #334155;
+  border-radius: 20px;
+  padding: 28px 26px 24px;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
+  transform: translateY(16px) scale(0.98);
+  opacity: 0;
+  transition:
+    transform 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.28s ease;
+}
+
+.panel-modal-root.is-open .panel-modal-dialog,
+.history-modal-root.is-open .history-modal-dialog {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+}
+
+.panel-modal-dialog--success {
+  border-color: rgba(16, 185, 129, 0.45);
+}
+
+.panel-modal-dialog--error {
+  border-color: rgba(244, 63, 94, 0.45);
+}
+
+.panel-modal-dialog--transfer-receipt {
+  border-color: rgba(232, 181, 101, 0.42);
+  max-width: 440px;
+  box-shadow:
+    0 24px 48px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(232, 181, 101, 0.06) inset;
+}
+
+.panel-modal-dialog--transfer-receipt .panel-modal-icon {
+  background: rgba(232, 181, 101, 0.2);
+  color: #f0c97c;
+}
+
+.panel-modal-dialog--transfer-receipt .panel-modal-title {
+  color: #f5e6d4;
+}
+
+.panel-modal-dialog--transfer-receipt .panel-modal-subtitle {
+  color: #e8b565;
+}
+
+.panel-modal-dialog--transfer-receipt .panel-modal-meta dt {
+  color: rgba(232, 181, 101, 0.75);
+}
+
+.panel-modal-dialog--transfer-receipt #transfer-receipt-monto {
+  color: #f0c97c;
+  font-weight: 700;
+}
+
+.panel-modal-dialog--transfer-receipt .panel-modal-btn {
+  background: linear-gradient(135deg, #e8b565 0%, #b45309 100%);
+  color: #1a1206;
+  box-shadow: 0 8px 20px rgba(180, 83, 9, 0.35);
+}
+
+.panel-modal-subtitle {
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--accent);
+  margin: 0 0 14px;
+}
+
+.panel-modal-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.panel-modal-dialog--success .panel-modal-icon {
+  background: rgba(16, 185, 129, 0.18);
+  color: var(--success);
+}
+
+.panel-modal-dialog--error .panel-modal-icon {
+  background: rgba(244, 63, 94, 0.18);
+  color: var(--danger);
+}
+
+.panel-modal-icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+.panel-modal-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin: 0 0 6px;
+  letter-spacing: -0.02em;
+}
+
+.panel-modal-dialog--success .panel-modal-title {
+  color: var(--success);
+}
+
+.panel-modal-dialog--error .panel-modal-title {
+  color: var(--danger);
+}
+
+.panel-modal-meta {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0 16px;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.panel-modal-meta dt {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.panel-modal-meta dd {
+  margin: 0;
+  color: var(--text);
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.panel-modal-desc {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0 0 22px;
+}
+
+.panel-modal-msg {
+  font-size: 0.95rem;
+  color: var(--text);
+  line-height: 1.55;
+  margin: 0 0 22px;
+}
+
+.panel-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.panel-modal-btn {
+  padding: 10px 20px;
+  border-radius: 10px;
+  border: none;
+  font-weight: 600;
+  font-size: 0.9rem;
+  font-family: inherit;
+  cursor: pointer;
+  background: var(--accent);
+  color: var(--white);
+}
+
+.panel-modal-btn:hover {
+  filter: brightness(1.08);
+}
+
+.panel-modal-root[hidden],
+.history-modal-root[hidden] {
+  display: none !important;
+}
+
+/* History Modal specific */
+.history-modal-dialog {
+  position: relative;
+  width: 100%;
+  max-width: min(920px, 96vw);
+  max-height: min(86vh, 720px);
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid #334155;
+  border-radius: 20px;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
+  transform: translateY(16px) scale(0.98);
+  opacity: 0;
+  transition:
+    transform 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.28s ease;
+}
+
+.history-modal-header {
+  flex-shrink: 0;
+  padding: 22px 24px 18px;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.85);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16px;
+}
+
+.history-modal-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.history-modal-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.history-modal-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.history-filter-btn {
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    color 0.2s,
+    background 0.2s;
+}
+
+.history-filter-btn:hover {
+  color: var(--text);
+  border-color: #475569;
+}
+
+.history-filter-btn.is-active {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.history-modal-close {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.6);
+  color: var(--text-muted);
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+}
+
+.history-modal-close:hover {
+  color: var(--text);
+  background: rgba(15, 23, 42, 0.95);
+}
+
+.history-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 20px 22px;
+}
+
+.history-modal-table-head {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) minmax(100px, 0.85fr) minmax(
+      160px,
+      2fr
+    ) minmax(90px, 0.75fr);
+  gap: 12px;
+  padding: 10px 14px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  border-bottom: 1px solid rgba(51, 65, 85, 0.6);
+  margin-bottom: 8px;
+}
+
+.history-modal-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) minmax(100px, 0.85fr) minmax(
+      160px,
+      2fr
+    ) minmax(90px, 0.75fr);
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  background: rgba(15, 23, 42, 0.45);
+  border-radius: 14px;
+  border: 1px solid rgba(51, 65, 85, 0.5);
+  margin-bottom: 8px;
+}
+
+.history-modal-row[hidden] {
+  display: none !important;
+}
+
+.history-modal-row-fecha {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.history-modal-row-tipo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+
+.history-modal-row-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.95rem;
+  flex-shrink: 0;
+}
+
+.history-modal-row-icon--transfer {
+  background: rgba(232, 181, 101, 0.16) !important;
+  color: #e8b565 !important;
+}
+
+.history-modal-row-desc {
+  font-size: 0.85rem;
+  color: var(--text);
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.history-modal-row-monto {
+  font-weight: 700;
+  font-size: 0.95rem;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.history-monto--suma {
+  color: var(--success);
+}
+
+.history-monto--resta {
+  color: var(--danger);
+}
+
+.history-monto--neutro {
+  color: var(--text-muted);
+}
+
+/* Log icon transfer */
+.log-icon--transfer {
+  background: rgba(232, 181, 101, 0.16) !important;
+  color: #e8b565 !important;
+}
+
+/* ============================================ */
+/* ESTILOS DE AUTENTICACIÓN (Registro/Login)    */
+/* ============================================ */
+.auth-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  min-height: 100vh;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 460px;
+  background: var(--card);
+  border: 1px solid #334155;
+  border-radius: 16px;
+  padding: 32px;
+}
+
+.auth-card h1 {
+  font-size: 1.35rem;
+  margin-bottom: 8px;
+}
+
+.auth-card p.sub {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin-bottom: 24px;
+}
+
+.auth-field {
+  margin-bottom: 16px;
+}
+
+.auth-field label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.auth-field input,
+.auth-field select {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: var(--text);
+  font-size: 0.95rem;
+  box-sizing: border-box;
+}
+
+.auth-field input:focus,
+.auth-field select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.auth-password-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.auth-password-wrap input {
+  padding-right: 4.25rem;
+}
+
+.auth-password-toggle {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 6px;
+  line-height: 1.2;
+}
+
+.auth-password-toggle:hover {
+  color: var(--accent);
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.auth-password-toggle:focus {
+  outline: none;
+  color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.35);
+}
+
+.auth-btn {
+  width: 100%;
+  padding: 12px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--white);
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 8px;
+}
+
+.auth-btn:hover {
+  filter: brightness(1.08);
+}
+
+.auth-links {
+  margin-top: 20px;
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.auth-links a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.auth-links a:hover {
+  text-decoration: underline;
+}
+
+.msg-err {
+  background: rgba(244, 63, 94, 0.12);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 18px;
+  font-size: 0.9rem;
+}
+
+.hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* Media queries */
+@media (max-width: 768px) {
+  body {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid #334155;
+  }
+
+  .main-view {
+    padding: 20px;
+  }
+
+  .top-bar {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 640px) {
+  .history-modal-table-head {
+    display: none;
+  }
+
+  .history-modal-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .history-modal-row-monto {
+    text-align: left;
+  }
+}
+</file>
+
+<file path="database/schema.sql">
+-- Base de datos para BANCO - PHP (XAMPP / MySQL)
+
+CREATE DATABASE IF NOT EXISTS banco_php
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+
+USE banco_php;
+
+CREATE TABLE IF NOT EXISTS usuarios (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    cedula VARCHAR(20) NOT NULL UNIQUE,
+    nombres VARCHAR(120) NOT NULL,
+    email VARCHAR(120) NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    rol ENUM('administrador', 'cliente') NOT NULL,
+    estado TINYINT(1) NOT NULL DEFAULT 1
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS cuentas (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    usuario_id INT UNSIGNED NOT NULL,
+    numero_cuenta VARCHAR(32) NOT NULL UNIQUE,
+    saldo DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+    estado TINYINT(1) NOT NULL DEFAULT 1,
+    CONSTRAINT fk_cuentas_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios (id)
+        ON UPDATE CASCADE ON DELETE RESTRICT
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS movimientos (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    cuenta_id INT UNSIGNED NOT NULL,
+    usuario_id INT UNSIGNED NOT NULL,
+    tipo VARCHAR(32) NOT NULL,
+    monto DECIMAL(12, 2) NOT NULL,
+    fecha DATETIME NOT NULL,
+    descripcion VARCHAR(255) NOT NULL,
+    CONSTRAINT fk_movimientos_cuenta FOREIGN KEY (cuenta_id) REFERENCES cuentas (id)
+        ON UPDATE CASCADE ON DELETE CASCADE,
+    CONSTRAINT fk_movimientos_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios (id)
+        ON UPDATE CASCADE ON DELETE RESTRICT
+) ENGINE=InnoDB;
+</file>
+
+<file path="src/models/Roles/Cliente.php">
+<?php
+
+declare(strict_types=1);
+
+namespace App\Models\Roles;
+
+use App\Models\Usuario;
+
+class Cliente extends Usuario
+{
+    public function __construct(
+        int $id,
+        string $cedula,
+        string $nombres,
+        string $email,
+        string $password,
+        bool $estado = true
+    ) {
+        parent::__construct($id, $cedula, $nombres, $email, $password, 'cliente', $estado);
+    }
+
+    public function obtenerPermisos(): array
+    {
+        return [
+            'consultar_operaciones',
+            'realizar_depositos',
+            'realizar_retiros',
+            'realizar_transferencias'
+        ];
+    }
+}
+</file>
+
+<file path="src/models/Cuenta.php">
+<?php
+
+declare(strict_types=1);
+
+namespace App\Models;
+
+use PDO;
+use Throwable;
+
+class Cuenta extends Database
+{
+    private int $id;
+    private int $usuario_id;
+    private string $numero_cuenta;
+    private float $saldo;
+    private bool $estado;
+
+    private array $movimientos = [];
+
+    public function __construct(int $id, int $usuario_id, string $numero_cuenta, float $saldo = 0.0, bool $estado = true)
+    {
+        $this->id = $id;
+        $this->usuario_id = $usuario_id;
+        $this->numero_cuenta = $numero_cuenta;
+        $this->saldo = $saldo;
+        $this->estado = $estado;
+    }
+
+    public function activarPersistencia(): void
+    {
+        parent::activarPersistencia();
+    }
+    
+    public function getPdo(): ?PDO
+    {
+        return $this->pdo;
+    }
+    
+    public function validarSaldo(float $monto): bool
+    {
+        return $this->saldo >= $monto;
+    }
+    
+    public function depositar(float $monto): bool
+    {
+        if ($monto <= 0 || !$this->estado) {
+            return false;
+        }
+    
+        if ($this->pdo === null) {
+            $this->saldo += $monto;
+            $this->registrarMovimiento('deposito', $monto, 'Deposito en cuenta');
+            return true;
+    
+        }
+        $db = $this->pdo;
+        $db->beginTransaction();
+    
+        try {
+            $stmt = $db->prepare('UPDATE cuentas SET saldo = saldo + :monto WHERE id = :id AND estado = 1');
+            $stmt->execute(['monto' => (string) $monto, 'id' => $this->id]);
+    
+            if ($stmt->rowCount() !== 1) {
+                $db->rollBack();
+                return false;
+            }
+            
+            $this->insertarMovimientoEnDb($db, 'deposito', $monto, 'Deposito en cuenta');
+            $db->commit();
+            $this->refrescarSaldoDesdeDb();
+            return true;
+    
+        } catch (Throwable) {
+            if ($db->inTransaction()) $db->rollBack();
+            return false;
+        }
+    }
+    
+    public function retirar(float $monto): bool
+    {
+        if ($monto <= 0 || !$this->estado || !$this->validarSaldo($monto)) {
+            return false;
+        }
+    
+        if ($this->pdo === null) {
+            $this->saldo -= $monto;
+            $this->registrarMovimiento('retiro', $monto, 'Retiro en cuenta');
+            return true;
+    
+        }
+        $db = $this->pdo;
+        $db->beginTransaction();
+    
+        try {
+            $stmt = $db->prepare('UPDATE cuentas 
+                                  SET saldo = saldo - :monto    
+                                  WHERE id = :id 
+                                  AND estado = 1 
+                                  AND saldo >= :monto2');
+
+            $stmt->execute(['monto' => (string) $monto, 'id' => $this->id, 'monto2' => (string) $monto]);
+    
+            if ($stmt->rowCount() !== 1) {
+                $db->rollBack();
+                return false;
+    
+            }
+    
+            $this->insertarMovimientoEnDb($db, 'retiro', $monto, 'Retiro en cuenta');
+            $db->commit();
+            $this->refrescarSaldoDesdeDb();
+            return true;
+    
+        } catch (Throwable) {
+            if ($db->inTransaction()) $db->rollBack();
+            return false;
+        }
+    }
+    
+    public static function obtenerCuentaActivaConTitularPorNumero(string $numeroCuenta): ?array
+    {
+        $numero = trim($numeroCuenta);
+    
+        if ($numero === '') return null;
+        $helper = new self(0, 0, '', 0.0, false);
+        $db = $helper->getConnection();
+        $stmt = $db->prepare('SELECT c.id, c.usuario_id, c.numero_cuenta, c.saldo, c.estado, u.cedula 
+                              AS titular_cedula, u.nombres 
+                              AS titular_nombres 
+                              FROM cuentas c 
+                              INNER JOIN usuarios u 
+                              ON u.id = c.usuario_id 
+                              AND u.estado = 1 
+                              WHERE c.numero_cuenta = :numero 
+                              AND c.estado = 1 
+                              LIMIT 1');
+
+        $stmt->execute(['numero' => $numero]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+        if ($row === false) return null;
+        $cuenta = new self((int) $row['id'], 
+                           (int) $row['usuario_id'], 
+                           (string) $row['numero_cuenta'], 
+                           (float) $row['saldo'], 
+                           (bool) $row['estado']);
+
+        $cuenta->activarPersistencia();
+    
+        return ['cuenta' => $cuenta, 
+                'titular_cedula' => (string) $row['titular_cedula'], 
+                'titular_nombres' => (string) $row['titular_nombres']];
+    
+    }
+    
+    private function construirDescripcionesTransferencia(Cuenta $destino, 
+                                                         string $descripcionPersonalizada, 
+                                                         string $nombreOrigen, 
+                                                         string $nombreDestino): array
+    {
+        $sufijo = trim($descripcionPersonalizada) !== '' ? (' - ' . trim($descripcionPersonalizada)) : '';
+        $nomOrigen = trim($nombreOrigen);
+        $nomDestino = trim($nombreDestino);
+    
+        if ($nomOrigen !== '' && $nomDestino !== '') {
+            return ['Transferencia enviada a ' . $nomDestino . $sufijo, 'Transferencia recibida de ' . $nomOrigen . $sufijo];
+    
+        }
+        return ['Transferencia enviada a ' . $destino->getNumeroCuenta() . $sufijo, 
+                'Transferencia recibida desde ' . $this->numero_cuenta . $sufijo];
+    }
+    
+    public function transferir(Cuenta $destino, 
+                               float $monto, 
+                               string $descripcionPersonalizada = '', 
+                               string $nombreOrigen = '', 
+                               string $nombreDestino = ''): bool
+    {
+        if ($monto <= 0 || !$this->estado || !$destino->getEstado() || !$this->validarSaldo($monto)) return false;
+        [$descEmisor, $descReceptor] = $this->construirDescripcionesTransferencia($destino, 
+                                                                                  $descripcionPersonalizada, 
+                                                                                  $nombreOrigen, 
+                                                                                  $nombreDestino);
+    
+        if ($this->pdo === null && $destino->getPdo() === null) {
+            $this->saldo -= $monto;
+            $destino->saldo += $monto;
+            $this->registrarMovimiento('transferencia', $monto, $descEmisor);
+            $destino->registrarMovimiento('transferencia', $monto, $descReceptor);
+    
+            return true;
+        }
+        
+        if ($this->pdo === null || $destino->getPdo() === null || $this->pdo !== $destino->getPdo()) return false;
+        $db = $this->pdo;
+        $db->beginTransaction();
+        
+        try {
+            $debit = $db->prepare('UPDATE cuentas 
+                                   SET saldo = saldo - :monto 
+                                   WHERE id = :id 
+                                   AND estado = 1 
+                                   AND saldo >= :monto2');
+
+            $debit->execute(['monto' => (string) $monto, 'id' => $this->id, 'monto2' => (string) $monto]);
+            
+            if ($debit->rowCount() !== 1) { $db->rollBack(); return false; }
+
+            $credit = $db->prepare('UPDATE cuentas 
+                                    SET saldo = saldo + :monto 
+                                    WHERE id = :id 
+                                    AND estado = 1');
+
+            $credit->execute(['monto' => (string) $monto, 'id' => $destino->getId()]);
+            
+            if ($credit->rowCount() !== 1) { $db->rollBack(); return false; }
+
+            $fecha = date('Y-m-d H:i:s');
+            
+            $this->insertarMovimientoEnDb($db, 'transferencia', $monto, $descEmisor, $fecha);
+            $destino->insertarMovimientoEnDb($db, 'transferencia', $monto, $descReceptor, $fecha);
+            $db->commit();
+            
+            $this->refrescarSaldoDesdeDb();
+            $destino->refrescarSaldoDesdeDb();
+        
+            return true;
+        
+        } catch (Throwable) {
+            if ($db->inTransaction()) $db->rollBack();
+            return false;
+        }
+    }
+    
+    protected function registrarMovimiento(string $tipo, float $monto, string $descripcion): void
+    {
+        if ($this->pdo === null) {
+            $this->movimientos[] = new Movimiento(count($this->movimientos) + 1, $this->id, $tipo, $monto, date('Y-m-d H:i:s'), $descripcion);
+            return;
+        }
+    
+        $this->insertarMovimientoEnDb($this->pdo, $tipo, $monto, $descripcion, date('Y-m-d H:i:s'));
+    }
+    
+    private function insertarMovimientoEnDb(PDO $db, 
+                                            string $tipo, 
+                                            float $monto, 
+                                            string $descripcion, 
+                                            ?string $fecha = null): void
+    {
+        $stmt = $db->prepare('INSERT INTO movimientos (cuenta_id, usuario_id, tipo, monto, fecha, descripcion) 
+                              VALUES (:cuenta_id, :usuario_id, :tipo, :monto, :fecha, :descripcion)');
+
+        $stmt->execute(['cuenta_id' => $this->id, 
+                        'usuario_id' => $this->usuario_id, 
+                        'tipo' => $tipo, 
+                        'monto' => (string) $monto, 
+                        'fecha' => $fecha ?? date('Y-m-d H:i:s'), 
+                        'descripcion' => $descripcion]);
+    }
+    
+    private function refrescarSaldoDesdeDb(): void
+    {
+        if ($this->pdo === null) return;
+        
+        $stmt = $this->pdo->prepare('SELECT saldo 
+                                     FROM cuentas 
+                                     WHERE id = :id 
+                                     LIMIT 1');
+
+        $stmt->execute(['id' => $this->id]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+        if ($row !== false) $this->saldo = (float) $row['saldo'];
+    }
+    
+    public function getId(): int { return $this->id; }
+    
+    public function setId(int $id): void { $this->id = $id; }
+
+    
+    public function getUsuarioId(): int { return $this->usuario_id; }
+    
+    public function setUsuarioId(int $usuario_id): void { $this->usuario_id = $usuario_id; }
+
+    
+    public function getNumeroCuenta(): string { return $this->numero_cuenta; }
+    
+    public function setNumeroCuenta(string $numero_cuenta): void { $this->numero_cuenta = $numero_cuenta; }
+
+    
+    public function getSaldo(): float { return $this->saldo; }
+    
+    public function setSaldo(float $saldo): void { $this->saldo = $saldo; }
+
+    
+    public function getEstado(): bool { return $this->estado; }
+    
+    public function setEstado(bool $estado): void { $this->estado = $estado; }
+
+    
+    public function getMovimientos(): array
+    {
+        if ($this->pdo === null) return $this->movimientos;
+
+        $stmt = $this->pdo->prepare('SELECT id, cuenta_id, tipo, monto, fecha, descripcion 
+                                     FROM movimientos 
+                                     WHERE cuenta_id = :cuenta_id 
+                                     ORDER BY fecha 
+                                     DESC, id 
+                                     DESC');
+
+        $stmt->execute(['cuenta_id' => $this->id]);
+        $lista = [];
+    
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $lista[] = new Movimiento((int) $row['id'], 
+                                      (int) $row['cuenta_id'], $row['tipo'], 
+                                      (float) $row['monto'], $row['fecha'], $row['descripcion']);
+        }
+    
+        return $lista;
+    }
+    
+    public static function obtenerMovimientosPorUsuarioId(int $usuarioId): array
+    {
+        $db = (new self(0, 0, '', 0.0, false))->getConnection();
+        
+        $stmt = $db->prepare('SELECT m.id, m.cuenta_id, m.tipo, m.monto, m.fecha, m.descripcion 
+                              FROM movimientos m 
+                              INNER JOIN cuentas c 
+                              ON c.id = m.cuenta_id 
+                              WHERE c.usuario_id = :uid 
+                              AND c.estado = 1 
+                              ORDER BY m.fecha 
+                              DESC, m.id 
+                              DESC');
+
+        $stmt->execute(['uid' => $usuarioId]);
+        $lista = [];
+    
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $lista[] = new Movimiento((int) $row['id'], 
+                                      (int) $row['cuenta_id'], 
+                                      (string) $row['tipo'], 
+                                      (float) $row['monto'], 
+                                      (string) $row['fecha'], 
+                                      (string) $row['descripcion']);
+        }
+    
+        return $lista;
+    }
+}
+</file>
+
+<file path="index.php">
+<?php
+
+require_once __DIR__ . '/vendor/autoload.php';
+
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+require_once __DIR__ . '/src/controllers/router.php';
+</file>
+
+<file path="src/controllers/BancoController.php">
+<?php
+
+declare(strict_types=1);
+
+namespace App\Controllers;
+
+use App\Models\UseCase\CargarPanelUseCase;
+use App\Models\UseCase\ProcesarDepositoUseCase;
+use App\Models\UseCase\ProcesarRetiroUseCase;
+use App\Models\UseCase\ProcesarTransferenciaUseCase;
+
+class BancoController
+{
+    public function mostrarPanel(): void
+    {
+        (new CargarPanelUseCase())->execute();
+    }
+
+    public function procesarDeposito(): void
+    {
+        (new ProcesarDepositoUseCase())->execute();
+    }
+
+    public function procesarRetiro(): void
+    {
+        (new ProcesarRetiroUseCase())->execute();
+    }
+    
+    public function procesarTransferencia(): void
+    {
+        (new ProcesarTransferenciaUseCase())->execute();
+    }
+}
+</file>
+
+<file path="src/views/banco_view.php">
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bank Josstor</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./assets/css/styles.css">
+</head>
+<body>
+    <aside class="sidebar">
+        <h2 style="margin-bottom: 40px; color: var(--accent)">Bank Josstor.</h2>
+
+        <div class="admin-card">
+            <h4>Sesión activa</h4>
+            <div class="admin-data">
+                <p><b>Nombre:</b> <?php echo htmlspecialchars($usuario->getNombres()); ?></p>
+                <p><b>Rol:</b> <?php echo htmlspecialchars(ucfirst($usuario->getRol())); ?></p>
+                <p><b>ID:</b> #<?php echo $usuario->getId(); ?></p>
+                <p><b>Cédula:</b> <?php echo htmlspecialchars($usuario->getCedula()); ?></p>
+                <p><b>Email:</b> <small><?php echo htmlspecialchars($usuario->getEmail()); ?></small></p>
+            </div>
+        </div>
+
+        <p style="margin-bottom: 12px; color: var(--text-muted); font-size: 0.9rem;">
+            <a href="index.php?route=logout" style="color: var(--danger); text-decoration: none; font-weight: 600;">Cerrar sesión</a>
+        </p>
+
+        <nav style="color: var(--text-muted); font-size: 0.9rem;">
+            <p style="margin-bottom: 15px;">Permisos:</p>
+            <ul style="list-style: none; padding-left: 5px;">
+                <?php foreach ($usuario->obtenerPermisos() as $permiso): ?>
+                    <li style="margin-bottom: 8px;">✓ <?php echo str_replace('_', ' ', $permiso); ?></li>
+                <?php endforeach; ?>
+            </ul>
+        </nav>
+    </aside>
+
+    <main class="main-view">
+        <header class="top-bar">
+            <div>
+                <h1 style="font-size: 2rem;">Panel Personal</h1>
+                <div class="client-tag">
+                    <?php echo htmlspecialchars($usuario->getNombres()); ?> · <?php echo htmlspecialchars(ucfirst($usuario->getRol())); ?>
+                </div>
+            </div>
+            <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 10px;">
+                <span class="status-badge">SISTEMA ONLINE</span>
+                <a href="index.php?route=logout" style="color: var(--text-muted); font-size: 0.85rem;">Cerrar sesión</a>
+            </div>
+        </header>
+
+        <?php if ($cuentaOrigen !== null): ?>
+        <section class="accounts-grid">
+            <div class="bank-card">
+                <span class="balance-label">CUENTA PRINCIPAL (ORIGEN)</span>
+                <div class="balance-value">$<?php echo number_format($cuentaOrigen->getSaldo(), 2); ?></div>
+                <div class="card-footer">
+                    <div class="footer-item">
+                        <span style="font-size: 0.75rem; color: var(--text-muted);">Número de Cuenta</span>
+                        <b><?php echo htmlspecialchars($cuentaOrigen->getNumeroCuenta()); ?></b>
+                    </div>
+                    <div class="footer-item" style="text-align: right;">
+                        <span style="font-size: 0.75rem; color: var(--text-muted);">Estado</span>
+                        <b style="color: var(--success)">ACTIVA</b>
+                    </div>
+                </div>
+            </div>
+
+            <?php if ($cuentaDestino !== null): ?>
+            <div class="bank-card" style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);">
+                <span class="balance-label">CUENTA DESTINO</span>
+                <div class="balance-value">$<?php echo number_format($cuentaDestino->getSaldo(), 2); ?></div>
+                <div class="card-footer">
+                    <div class="footer-item">
+                        <span style="font-size: 0.75rem; color: var(--text-muted);">Número de Cuenta</span>
+                        <b><?php echo htmlspecialchars($cuentaDestino->getNumeroCuenta()); ?></b>
+                    </div>
+                    <div class="footer-item" style="text-align: right;">
+                        <span style="font-size: 0.75rem; color: var(--text-muted);">Propietario ID</span>
+                        <b>#<?php echo $cuentaDestino->getUsuarioId(); ?></b>
+                    </div>
+                </div>
+            </div>
+            <?php endif; ?>
+        </section>
+        <?php else: ?>
+        <section class="accounts-grid" style="margin-bottom: 30px;">
+            <p style="color: var(--text-muted);">No hay cuentas bancarias para mostrar en este usuario (por ejemplo, un administrador sin cuentas, o un cliente sin registros en la tabla cuentas).</p>
+        </section>
+        <?php endif; ?>
+
+        <?php if ($cuentaOrigen !== null): ?>
+        <section class="quick-ops-section" aria-label="Operaciones rápidas">
+            <h3>Operaciones rápidas</h3>
+            <p style="color: var(--text-muted); font-size: 0.9rem; margin: -8px 0 18px;">
+                Cuenta: <strong><?php echo htmlspecialchars($cuentaOrigen->getNumeroCuenta(), ENT_QUOTES, 'UTF-8'); ?></strong>
+            </p>
+            <div class="quick-ops-grid">
+                <form class="quick-op-card" method="post" action="index.php?route=depositar" autocomplete="off">
+                    <span class="op-title">Depositar</span>
+                    <input type="text" name="monto" inputmode="decimal" placeholder="Monto a depositar ($0.00)" required>
+                    <button type="submit" class="quick-op-btn">Depositar</button>
+                </form>
+                <form class="quick-op-card" method="post" action="index.php?route=retirar" autocomplete="off">
+                    <span class="op-title">Retirar</span>
+                    <input type="text" name="monto" inputmode="decimal" placeholder="Monto a retirar ($0.00)" required>
+                    <button type="submit" class="quick-op-btn">Retirar</button>
+                </form>
+            </div>
+        </section>
+
+        <section class="transfer-section" aria-label="Transferir a terceros">
+            <h3>Transferir a terceros</h3>
+            <p class="transfer-section__lead">
+                Envío seguro a otra cuenta. Verifique el <strong>número de cuenta</strong> y la <strong>cédula del titular</strong> antes de confirmar.
+            </p>
+            <form class="transfer-card" method="post" action="index.php?route=transferir" autocomplete="off">
+                <span class="op-title">Datos de la transferencia</span>
+                <input type="text" name="numero_cuenta_destino" placeholder="Número de cuenta destino" required maxlength="64">
+                <input type="text" name="cedula_destino" placeholder="Cédula del titular de la cuenta" required maxlength="32">
+                <input type="text" name="monto" inputmode="decimal" placeholder="Monto a transferir ($0.00)" required>
+                <textarea name="descripcion_personalizada" placeholder="Motivo o descripción (opcional)" maxlength="500"></textarea>
+                <button type="submit" class="transfer-btn">Enviar transferencia</button>
+            </form>
+        </section>
+        <?php endif; ?>
+
+        <?php $historialVistaPrevia = array_slice($historial, 0, 3); ?>
+        <section class="activity-log">
+            <h3 style="margin-bottom: 25px; font-size: 1.2rem;">Trazabilidad de Movimientos</h3>
+
+            <?php if (empty($historial)): ?>
+            <p style="color: var(--text-muted); margin: 0;">No se han registrado movimientos en esta cuenta.</p>
+            <?php else: ?>
+                <?php foreach ($historialVistaPrevia as $mov): ?>
+                    <?php
+                    $tipoRaw = $mov->getTipo();
+                    $descLower = strtolower($mov->getDescripcion());
+                    $tipoEtiqueta = match ($tipoRaw) {
+                        'deposito' => 'Depósito',
+                        'retiro' => 'Retiro',
+                        'transferencia' => 'Transferencia',
+                        default => ucfirst($tipoRaw),
+                    };
+                    $claseLog = match ($tipoRaw) {
+                        'deposito' => 'success',
+                        'retiro' => 'error',
+                        'transferencia' => 'transfer',
+                        default => '',
+                    };
+                    $icono = match ($tipoRaw) {
+                        'deposito' => '+',
+                        'retiro' => '−',
+                        default => '⇄',
+                    };
+                    if ($tipoRaw === 'transferencia') {
+                        $bgIcono = 'rgba(232, 181, 101, 0.16)';
+                        $colorIcono = '#e8b565';
+                    } else {
+                        $bgIcono = match ($tipoRaw) {
+                            'deposito' => 'rgba(16, 185, 129, 0.2)',
+                            'retiro' => 'rgba(239, 68, 68, 0.2)',
+                            default => 'rgba(148, 163, 184, 0.2)',
+                        };
+                        $colorIcono = match ($tipoRaw) {
+                            'deposito' => 'var(--success)',
+                            'retiro' => 'var(--danger)',
+                            default => 'var(--text-muted)',
+                        };
+                    }
+                    if ($tipoRaw === 'deposito') {
+                        $prefijoMonto = '+';
+                        $colorMonto = 'var(--success)';
+                    } elseif ($tipoRaw === 'retiro') {
+                        $prefijoMonto = '−';
+                        $colorMonto = 'var(--danger)';
+                    } elseif ($tipoRaw === 'transferencia') {
+                        if (str_contains($descLower, 'recibida')) {
+                            $prefijoMonto = '+';
+                            $colorMonto = 'var(--success)';
+                        } elseif (str_contains($descLower, 'enviada')) {
+                            $prefijoMonto = '−';
+                            $colorMonto = 'var(--danger)';
+                        } else {
+                            $prefijoMonto = '';
+                            $colorMonto = 'var(--text-muted)';
+                        }
+                    } else {
+                        $prefijoMonto = '';
+                        $colorMonto = 'var(--text-muted)';
+                    }
+                    $montoAbs = number_format(abs($mov->getMonto()), 2);
+                    $logIconClass = $tipoRaw === 'transferencia' ? 'log-icon log-icon--transfer' : 'log-icon';
+                    $logIconStyle = $tipoRaw === 'transferencia'
+                        ? 'width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold;'
+                        : 'background: ' . $bgIcono . '; color: ' . $colorIcono . '; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold;';
+                    ?>
+            <div class="log-entry <?php echo htmlspecialchars($claseLog); ?>">
+                <div class="<?php echo htmlspecialchars($logIconClass); ?>" style="<?php echo $logIconStyle; ?>"><?php echo htmlspecialchars($icono); ?></div>
+                <div class="log-info">
+                    <b><?php echo htmlspecialchars($tipoEtiqueta); ?></b>
+                    <span style="display: block; margin-top: 4px; font-size: 0.85rem; color: var(--text-muted);"><?php echo htmlspecialchars($mov->getFecha()); ?></span>
+                    <span><?php echo htmlspecialchars($mov->getDescripcion()); ?></span>
+                </div>
+                <div style="font-weight: 700; font-size: 1.1rem; color: <?php echo $colorMonto; ?>; white-space: nowrap;">
+                    <?php echo $prefijoMonto !== '' ? htmlspecialchars($prefijoMonto) : ''; ?>$<?php echo $montoAbs; ?>
+                </div>
+            </div>
+                <?php endforeach; ?>
+                <button type="button" class="btn-consultar-operaciones" id="btn-consultar-operaciones" aria-haspopup="dialog" aria-controls="history-modal-root">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                    Consultar Operaciones
+                </button>
+            <?php endif; ?>
+        </section>
+    </main>
+
+    <?php if (!empty($historial)): ?>
+    <div
+        id="history-modal-root"
+        class="history-modal-root"
+        hidden
+        aria-hidden="true"
+    >
+        <div class="history-modal-backdrop" id="history-modal-backdrop"></div>
+        <div
+            class="history-modal-dialog"
+            id="history-modal-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="history-modal-title"
+        >
+            <div class="history-modal-header">
+                <div class="history-modal-header-top">
+                    <h2 id="history-modal-title">Historial de operaciones</h2>
+                    <button type="button" class="history-modal-close" id="history-modal-close" aria-label="Cerrar historial">&times;</button>
+                </div>
+                <div class="history-modal-filters" role="group" aria-label="Filtrar movimientos">
+                    <button type="button" class="history-filter-btn is-active" data-filter="todos">Todos</button>
+                    <button type="button" class="history-filter-btn" data-filter="deposito">Depósitos</button>
+                    <button type="button" class="history-filter-btn" data-filter="retiro">Retiros</button>
+                    <button type="button" class="history-filter-btn" data-filter="transferencia">Transferencias</button>
+                </div>
+            </div>
+            <div class="history-modal-body" id="history-modal-body">
+                <div class="history-modal-table-head" aria-hidden="true">
+                    <span>Fecha / hora</span>
+                    <span>Tipo</span>
+                    <span>Descripción</span>
+                    <span>Monto</span>
+                </div>
+                <?php foreach ($historial as $mov): ?>
+                    <?php
+                    $tipoRaw = $mov->getTipo();
+                    $descLower = strtolower($mov->getDescripcion());
+                    $tipoEtiqueta = match ($tipoRaw) {
+                        'deposito' => 'Depósito',
+                        'retiro' => 'Retiro',
+                        'transferencia' => 'Transferencia',
+                        default => ucfirst($tipoRaw),
+                    };
+                    $icono = match ($tipoRaw) {
+                        'deposito' => '+',
+                        'retiro' => '−',
+                        default => '⇄',
+                    };
+                    if ($tipoRaw === 'transferencia') {
+                        $bgIcono = 'rgba(232, 181, 101, 0.16)';
+                        $colorIcono = '#e8b565';
+                    } else {
+                        $bgIcono = match ($tipoRaw) {
+                            'deposito' => 'rgba(16, 185, 129, 0.2)',
+                            'retiro' => 'rgba(239, 68, 68, 0.2)',
+                            default => 'rgba(148, 163, 184, 0.2)',
+                        };
+                        $colorIcono = match ($tipoRaw) {
+                            'deposito' => 'var(--success)',
+                            'retiro' => 'var(--danger)',
+                            default => 'var(--text-muted)',
+                        };
+                    }
+                    if ($tipoRaw === 'deposito') {
+                        $montoClass = 'history-monto--suma';
+                        $prefijoMonto = '+';
+                    } elseif ($tipoRaw === 'retiro') {
+                        $montoClass = 'history-monto--resta';
+                        $prefijoMonto = '−';
+                    } elseif ($tipoRaw === 'transferencia') {
+                        if (str_contains($descLower, 'recibida')) {
+                            $montoClass = 'history-monto--suma';
+                            $prefijoMonto = '+';
+                        } elseif (str_contains($descLower, 'enviada')) {
+                            $montoClass = 'history-monto--resta';
+                            $prefijoMonto = '−';
+                        } else {
+                            $montoClass = 'history-monto--neutro';
+                            $prefijoMonto = '';
+                        }
+                    } else {
+                        $montoClass = 'history-monto--neutro';
+                        $prefijoMonto = '';
+                    }
+                    $montoAbs = number_format(abs($mov->getMonto()), 2);
+                    $tipoData = htmlspecialchars($tipoRaw, ENT_QUOTES, 'UTF-8');
+                    $historyIconClass = 'history-modal-row-icon'
+                        . ($tipoRaw === 'transferencia' ? ' history-modal-row-icon--transfer' : '');
+                    $historyIconStyle = $tipoRaw === 'transferencia'
+                        ? ''
+                        : ('background: ' . $bgIcono . '; color: ' . $colorIcono . ';');
+                    ?>
+                <div class="history-modal-row" data-tipo="<?php echo $tipoData; ?>">
+                    <div class="history-modal-row-fecha"><?php echo htmlspecialchars($mov->getFecha(), ENT_QUOTES, 'UTF-8'); ?></div>
+                    <div class="history-modal-row-tipo">
+                        <span class="<?php echo htmlspecialchars($historyIconClass, ENT_QUOTES, 'UTF-8'); ?>"<?php echo $historyIconStyle !== '' ? ' style="' . htmlspecialchars($historyIconStyle, ENT_QUOTES, 'UTF-8') . '"' : ''; ?>><?php echo htmlspecialchars($icono, ENT_QUOTES, 'UTF-8'); ?></span>
+                        <span><?php echo htmlspecialchars($tipoEtiqueta, ENT_QUOTES, 'UTF-8'); ?></span>
+                    </div>
+                    <div class="history-modal-row-desc"><?php echo htmlspecialchars($mov->getDescripcion(), ENT_QUOTES, 'UTF-8'); ?></div>
+                    <div class="history-modal-row-monto <?php echo htmlspecialchars($montoClass, ENT_QUOTES, 'UTF-8'); ?>">
+                        <?php echo $prefijoMonto !== '' ? htmlspecialchars($prefijoMonto, ENT_QUOTES, 'UTF-8') : ''; ?>$<?php echo $montoAbs; ?>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <?php
+    $modalBootstrap = null;
+    if (!empty($_SESSION['panel_ok'])) {
+        $rawOk = $_SESSION['panel_ok'];
+        unset($_SESSION['panel_ok']);
+        if (is_array($rawOk) && ($rawOk['modal'] ?? '') === 'recibo_transferencia') {
+            $modalBootstrap = [
+                'kind' => 'recibo_transferencia',
+                'beneficiario' => (string) ($rawOk['beneficiario'] ?? ''),
+                'numero_cuenta_destino' => (string) ($rawOk['numero_cuenta_destino'] ?? ''),
+                'monto_formateado' => isset($rawOk['monto_formateado'])
+                    ? (string) $rawOk['monto_formateado']
+                    : ('$' . number_format((float) ($rawOk['monto'] ?? 0), 2)),
+                'fecha' => (string) ($rawOk['fecha'] ?? date('d/m/Y H:i:s')),
+                'descripcion_usuario' => (string) ($rawOk['descripcion_usuario'] ?? ''),
+            ];
+        } elseif (is_array($rawOk)) {
+            $montoFmt = isset($rawOk['monto_formateado'])
+                ? (string) $rawOk['monto_formateado']
+                : ('$' . number_format((float) ($rawOk['monto'] ?? 0), 2));
+            $modalBootstrap = [
+                'kind' => 'panel_modal',
+                'variant' => 'success',
+                'tipo' => (string) ($rawOk['tipo'] ?? 'Operación'),
+                'monto_formateado' => $montoFmt,
+                'fecha' => (string) ($rawOk['fecha'] ?? date('d/m/Y H:i:s')),
+                'descripcion' => (string) ($rawOk['descripcion'] ?? ''),
+            ];
+        } else {
+            $modalBootstrap = [
+                'kind' => 'panel_modal',
+                'variant' => 'success',
+                'tipo' => 'Operación',
+                'monto_formateado' => '—',
+                'fecha' => date('d/m/Y H:i:s'),
+                'descripcion' => (string) $rawOk,
+            ];
+        }
+    } elseif (!empty($_SESSION['panel_error'])) {
+        $modalBootstrap = [
+            'kind' => 'panel_modal',
+            'variant' => 'error',
+            'mensaje' => (string) $_SESSION['panel_error'],
+        ];
+        unset($_SESSION['panel_error']);
+    }
+
+    $hidePanelModal = $modalBootstrap === null
+        || (($modalBootstrap['kind'] ?? '') === 'recibo_transferencia');
+    $hideTransferReceipt = $modalBootstrap === null
+        || (($modalBootstrap['kind'] ?? '') !== 'recibo_transferencia');
+    ?>
+
+    <div
+        id="panel-modal-root"
+        class="panel-modal-root"
+        <?php echo $hidePanelModal ? 'hidden' : ''; ?>
+        aria-hidden="true"
+    >
+        <div class="panel-modal-backdrop" id="panel-modal-backdrop"></div>
+        <div
+            class="panel-modal-dialog"
+            id="panel-modal-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="panel-modal-title"
+        >
+            <div class="panel-modal-icon" id="panel-modal-icon" aria-hidden="true"></div>
+            <h2 class="panel-modal-title" id="panel-modal-title"></h2>
+
+            <div id="panel-modal-success-block" hidden>
+                <dl class="panel-modal-meta">
+                    <div>
+                        <dt>Tipo de operación</dt>
+                        <dd id="panel-modal-tipo"></dd>
+                    </div>
+                    <div>
+                        <dt>Monto</dt>
+                        <dd id="panel-modal-monto"></dd>
+                    </div>
+                    <div>
+                        <dt>Fecha y hora</dt>
+                        <dd id="panel-modal-fecha"></dd>
+                    </div>
+                </dl>
+                <p class="panel-modal-desc" id="panel-modal-descripcion"></p>
+            </div>
+
+            <div id="panel-modal-error-block" hidden>
+                <p class="panel-modal-msg" id="panel-modal-mensaje"></p>
+            </div>
+
+            <div class="panel-modal-actions">
+                <button type="button" class="panel-modal-btn" id="panel-modal-close">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <div
+        id="transfer-receipt-modal-root"
+        class="panel-modal-root"
+        <?php echo $hideTransferReceipt ? 'hidden' : ''; ?>
+        aria-hidden="true"
+    >
+        <div class="panel-modal-backdrop" id="transfer-receipt-modal-backdrop"></div>
+        <div
+            class="panel-modal-dialog panel-modal-dialog--transfer-receipt"
+            id="transfer-receipt-modal-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="transfer-receipt-title"
+        >
+            <div class="panel-modal-icon" id="transfer-receipt-modal-icon" aria-hidden="true"></div>
+            <p class="panel-modal-subtitle">Recibo de transferencia</p>
+            <h2 class="panel-modal-title" id="transfer-receipt-title">Transferencia exitosa</h2>
+            <dl class="panel-modal-meta">
+                <div>
+                    <dt>Beneficiario</dt>
+                    <dd id="transfer-receipt-beneficiario"></dd>
+                </div>
+                <div>
+                    <dt>Número de cuenta destino</dt>
+                    <dd id="transfer-receipt-cuenta"></dd>
+                </div>
+                <div>
+                    <dt>Monto enviado</dt>
+                    <dd id="transfer-receipt-monto"></dd>
+                </div>
+                <div>
+                    <dt>Fecha y hora</dt>
+                    <dd id="transfer-receipt-fecha"></dd>
+                </div>
+                <div>
+                    <dt>Su descripción</dt>
+                    <dd id="transfer-receipt-motivo"></dd>
+                </div>
+            </dl>
+            <div class="panel-modal-actions">
+                <button type="button" class="panel-modal-btn" id="transfer-receipt-modal-close">Finalizar</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = new WebSocket('ws://localhost:8080');
+        socket.onopen = function() {
+            console.log("Conectado al servidor de WebSockets del Banco");
+        };
+    </script>
+    <script>
+        (function () {
+            var boot = <?php echo json_encode($modalBootstrap, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
+            if (!boot) {
+                return;
+            }
+
+            var svgCheck = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>';
+            var svgWarn = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
+            var svgTransfer = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>';
+
+            if (boot.kind === 'recibo_transferencia') {
+                var root = document.getElementById('transfer-receipt-modal-root');
+                var backdrop = document.getElementById('transfer-receipt-modal-backdrop');
+                var closeBtn = document.getElementById('transfer-receipt-modal-close');
+                var iconEl = document.getElementById('transfer-receipt-modal-icon');
+
+                function onEscKey(e) {
+                    if (e.key === 'Escape' && root.classList.contains('is-open')) {
+                        closeReceipt();
+                    }
+                }
+
+                function closeReceipt() {
+                    document.removeEventListener('keydown', onEscKey);
+                    root.classList.remove('is-open');
+                    root.setAttribute('aria-hidden', 'true');
+                    setTimeout(function () {
+                        root.setAttribute('hidden', '');
+                    }, 280);
+                }
+
+                function openReceipt() {
+                    root.removeAttribute('hidden');
+                    root.setAttribute('aria-hidden', 'false');
+                    requestAnimationFrame(function () {
+                        requestAnimationFrame(function () {
+                            root.classList.add('is-open');
+                        });
+                    });
+                }
+
+                iconEl.innerHTML = svgTransfer;
+                document.getElementById('transfer-receipt-beneficiario').textContent = boot.beneficiario || '—';
+                document.getElementById('transfer-receipt-cuenta').textContent = boot.numero_cuenta_destino || '—';
+                document.getElementById('transfer-receipt-monto').textContent = boot.monto_formateado || '—';
+                document.getElementById('transfer-receipt-fecha').textContent = boot.fecha || '—';
+                var motivo = boot.descripcion_usuario;
+                document.getElementById('transfer-receipt-motivo').textContent =
+                    motivo && String(motivo).trim() !== '' ? motivo : '—';
+
+                closeBtn.addEventListener('click', closeReceipt);
+                backdrop.addEventListener('click', closeReceipt);
+                document.addEventListener('keydown', onEscKey);
+
+                openReceipt();
+                return;
+            }
+
+            if (boot.kind !== 'panel_modal') {
+                return;
+            }
+
+            var payload = boot;
+            var root = document.getElementById('panel-modal-root');
+            var backdrop = document.getElementById('panel-modal-backdrop');
+            var iconEl = document.getElementById('panel-modal-icon');
+            var titleEl = document.getElementById('panel-modal-title');
+            var successBlock = document.getElementById('panel-modal-success-block');
+            var errorBlock = document.getElementById('panel-modal-error-block');
+            var closeBtn = document.getElementById('panel-modal-close');
+
+            function onEscKey(e) {
+                if (e.key === 'Escape' && root.classList.contains('is-open')) {
+                    closeModal();
+                }
+            }
+
+            function closeModal() {
+                document.removeEventListener('keydown', onEscKey);
+                root.classList.remove('is-open');
+                root.setAttribute('aria-hidden', 'true');
+                setTimeout(function () {
+                    root.setAttribute('hidden', '');
+                }, 280);
+            }
+
+            function openModal() {
+                root.removeAttribute('hidden');
+                root.setAttribute('aria-hidden', 'false');
+                requestAnimationFrame(function () {
+                    requestAnimationFrame(function () {
+                        root.classList.add('is-open');
+                    });
+                });
+            }
+
+            var dialog = document.getElementById('panel-modal-dialog');
+
+            if (payload.variant === 'success') {
+                dialog.classList.add('panel-modal-dialog--success');
+                dialog.classList.remove('panel-modal-dialog--error');
+                dialog.classList.remove('panel-modal-dialog--transfer-receipt');
+                iconEl.innerHTML = svgCheck;
+                titleEl.textContent = 'Operación exitosa';
+                document.getElementById('panel-modal-tipo').textContent = payload.tipo || '';
+                document.getElementById('panel-modal-monto').textContent = payload.monto_formateado || '';
+                document.getElementById('panel-modal-fecha').textContent = payload.fecha || '';
+                document.getElementById('panel-modal-descripcion').textContent = payload.descripcion || '';
+                successBlock.hidden = false;
+                errorBlock.hidden = true;
+            } else {
+                dialog.classList.add('panel-modal-dialog--error');
+                dialog.classList.remove('panel-modal-dialog--success');
+                dialog.classList.remove('panel-modal-dialog--transfer-receipt');
+                iconEl.innerHTML = svgWarn;
+                titleEl.textContent = 'Operación no realizada';
+                document.getElementById('panel-modal-mensaje').textContent = payload.mensaje || '';
+                successBlock.hidden = true;
+                errorBlock.hidden = false;
+            }
+
+            closeBtn.addEventListener('click', closeModal);
+            backdrop.addEventListener('click', closeModal);
+            document.addEventListener('keydown', onEscKey);
+
+            openModal();
+        })();
+    </script>
+    <script>
+        (function () {
+            var openBtn = document.getElementById('btn-consultar-operaciones');
+            var root = document.getElementById('history-modal-root');
+            if (!openBtn || !root) {
+                return;
+            }
+
+            var backdrop = document.getElementById('history-modal-backdrop');
+            var closeBtn = document.getElementById('history-modal-close');
+            var filterBtns = root.querySelectorAll('.history-filter-btn');
+            var rows = root.querySelectorAll('.history-modal-row');
+            var TRANSITION_MS = 280;
+
+            function applyFilter(filter) {
+                filterBtns.forEach(function (b) {
+                    b.classList.toggle('is-active', b.getAttribute('data-filter') === filter);
+                });
+                rows.forEach(function (row) {
+                    var tipo = row.getAttribute('data-tipo') || '';
+                    var show = filter === 'todos' || tipo === filter;
+                    row.hidden = !show;
+                });
+            }
+
+            function onHistoryEsc(e) {
+                if (e.key === 'Escape' && root.classList.contains('is-open')) {
+                    e.stopPropagation();
+                    closeHistoryModal();
+                }
+            }
+
+            function closeHistoryModal() {
+                document.removeEventListener('keydown', onHistoryEsc, true);
+                root.classList.remove('is-open');
+                root.setAttribute('aria-hidden', 'true');
+                setTimeout(function () {
+                    root.setAttribute('hidden', '');
+                }, TRANSITION_MS);
+                openBtn.focus();
+            }
+
+            function openHistoryModal() {
+                applyFilter('todos');
+                root.removeAttribute('hidden');
+                root.setAttribute('aria-hidden', 'false');
+                document.addEventListener('keydown', onHistoryEsc, true);
+                requestAnimationFrame(function () {
+                    requestAnimationFrame(function () {
+                        root.classList.add('is-open');
+                    });
+                });
+                closeBtn.focus();
+            }
+
+            openBtn.addEventListener('click', openHistoryModal);
+            closeBtn.addEventListener('click', closeHistoryModal);
+            backdrop.addEventListener('click', closeHistoryModal);
+
+            filterBtns.forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    var f = btn.getAttribute('data-filter');
+                    if (f) {
+                        applyFilter(f);
+                    }
+                });
+            });
+        })();
+    </script>
+</body>
+</html>
+</file>
+
+</files>
