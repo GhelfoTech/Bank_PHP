@@ -95,11 +95,10 @@ class GestionarEstadoUseCase extends Database
 
         $accion = $nuevoEstado === 1 ? 'habilitó' : 'deshabilitó';
         $_SESSION['panel_ok'] = [
-            'tipo' => 'Gestión de estado',
-            'monto' => 0,
-            'monto_formateado' => '—',
-            'fecha' => date('d/m/Y H:i:s'),
-            'descripcion' => 'Se ' . $accion . ' al usuario #' . $objetivoId . ' y sus cuentas asociadas.',
+            'modal' => 'gestion_estado',
+            'accion' => $accion,
+            'usuario_id' => $objetivoId,
+            'mensaje' => 'Se ' . $accion . ' al usuario #' . $objetivoId . ' y sus cuentas asociadas.',
         ];
 
         header('Location: index.php?route=panel');

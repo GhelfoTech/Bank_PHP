@@ -76,6 +76,50 @@ src/views/registro.php
 <files>
 This section contains the contents of the repository's files.
 
+<file path=".gitignore">
+/vendor/
+</file>
+
+<file path="bin/socket-server.php">
+<?php
+
+require __DIR__ . '/../vendor/autoload.php';
+
+use App\Socket\Notificador;
+use Ratchet\Http\HttpServer;
+use Ratchet\Server\IoServer;
+use Ratchet\WebSocket\WsServer;
+
+$server = IoServer::factory(
+    new HttpServer(
+        new WsServer(
+            new Notificador()
+        )
+    ),
+    8080
+);
+
+echo "Servidor de WebSockets iniciado en el puerto 8080..." . PHP_EOL;
+
+$server->run();
+</file>
+
+<file path="database/migration_movimientos_usuario_id.sql">
+-- Ejecutar si ya tenías la BD sin la columna usuario_id en movimientos.
+USE banco_php;
+
+ALTER TABLE movimientos
+    ADD COLUMN usuario_id INT UNSIGNED NOT NULL DEFAULT 0 AFTER cuenta_id;
+
+UPDATE movimientos m
+INNER JOIN cuentas c ON c.id = m.cuenta_id
+SET m.usuario_id = c.usuario_id;
+
+ALTER TABLE movimientos
+    ADD CONSTRAINT fk_movimientos_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios (id)
+        ON UPDATE CASCADE ON DELETE RESTRICT;
+</file>
+
 <file path="helpers/auth.php">
 <?php
 
@@ -93,8 +137,6 @@ declare(strict_types=1);
 
 use App\Models\Database;
 use App\Models\Usuario;
-use PDO;
-use PDOException;
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -325,6 +367,39 @@ function auth_db(): PDO
     }
 
     return $bridge->pdo();
+}
+</file>
+
+<file path="src/Socket/Notificador.php">
+<?php
+
+namespace App\Socket;
+
+use Ratchet\ConnectionInterface;
+use Ratchet\MessageComponentInterface;
+
+class Notificador implements MessageComponentInterface
+{
+    public function onOpen(ConnectionInterface $conn): void
+    {
+        echo "Nueva conexion detectada! ID: {$conn->resourceId}" . PHP_EOL;
+    }
+
+    public function onMessage(ConnectionInterface $from, $msg): void
+    {
+        echo "Mensaje recibido de {$from->resourceId}: {$msg}" . PHP_EOL;
+    }
+
+    public function onClose(ConnectionInterface $conn): void
+    {
+        echo "Conexion cerrada. ID: {$conn->resourceId}" . PHP_EOL;
+    }
+
+    public function onError(ConnectionInterface $conn, \Exception $e): void
+    {
+        echo "Error en conexion {$conn->resourceId}: {$e->getMessage()}" . PHP_EOL;
+        $conn->close();
+    }
 }
 </file>
 
@@ -633,50 +708,6 @@ trait UsuarioTrait
 }
 </file>
 
-<file path=".gitignore">
-/vendor/
-</file>
-
-<file path="bin/socket-server.php">
-<?php
-
-require __DIR__ . '/../vendor/autoload.php';
-
-use App\Socket\Notificador;
-use Ratchet\Http\HttpServer;
-use Ratchet\Server\IoServer;
-use Ratchet\WebSocket\WsServer;
-
-$server = IoServer::factory(
-    new HttpServer(
-        new WsServer(
-            new Notificador()
-        )
-    ),
-    8080
-);
-
-echo "Servidor de WebSockets iniciado en el puerto 8080..." . PHP_EOL;
-
-$server->run();
-</file>
-
-<file path="database/migration_movimientos_usuario_id.sql">
--- Ejecutar si ya tenías la BD sin la columna usuario_id en movimientos.
-USE banco_php;
-
-ALTER TABLE movimientos
-    ADD COLUMN usuario_id INT UNSIGNED NOT NULL DEFAULT 0 AFTER cuenta_id;
-
-UPDATE movimientos m
-INNER JOIN cuentas c ON c.id = m.cuenta_id
-SET m.usuario_id = c.usuario_id;
-
-ALTER TABLE movimientos
-    ADD CONSTRAINT fk_movimientos_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios (id)
-        ON UPDATE CASCADE ON DELETE RESTRICT;
-</file>
-
 <file path="src/models/UseCase/GenerarReportePdfUseCase.php">
 <?php
 
@@ -688,11 +719,14 @@ use App\Models\Database;
 use App\Models\Roles\Administrador;
 use App\Models\Roles\Cliente;
 use App\Models\Usuario;
+use App\Traits\UseCase\OperacionesTrait;
 use Dompdf\Dompdf;
 use Dompdf\Options;
 
 class GenerarReportePdfUseCase extends Database
 {
+    use OperacionesTrait;
+
     public function execute(): void
     {
         if (empty($_SESSION['usuario_id'])) {
@@ -883,46 +917,6 @@ class GenerarReportePdfUseCase extends Database
 </html>
 HTML;
     }
-
-    private function cargarUsuarioLogueado(\PDO $db): Usuario
-    {
-        $id = (int) $_SESSION['usuario_id'];
-        $stmt = $db->prepare(
-            'SELECT id, cedula, nombres, email, password, rol, estado
-             FROM usuarios
-             WHERE id = :id AND estado = 1
-             LIMIT 1'
-        );
-        $stmt->execute(['id' => $id]);
-        $row = $stmt->fetch();
-
-        if ($row === false) {
-            $_SESSION = [];
-            session_destroy();
-            header('Location: index.php?route=login');
-            exit;
-        }
-
-        if ((string) $row['rol'] === 'administrador') {
-            return new Administrador(
-                (int) $row['id'],
-                (string) $row['cedula'],
-                (string) $row['nombres'],
-                (string) $row['email'],
-                (string) $row['password'],
-                (bool) $row['estado']
-            );
-        }
-
-        return new Cliente(
-            (int) $row['id'],
-            (string) $row['cedula'],
-            (string) $row['nombres'],
-            (string) $row['email'],
-            (string) $row['password'],
-            (bool) $row['estado']
-        );
-    }
 }
 </file>
 
@@ -937,10 +931,13 @@ use App\Models\Database;
 use App\Models\Roles\Administrador;
 use App\Models\Roles\Cliente;
 use App\Models\Usuario;
+use App\Traits\UseCase\OperacionesTrait;
 use PDOException;
 
 class GestionarEstadoUseCase extends Database
 {
+    use OperacionesTrait;
+
     public function execute(): void
     {
         if (empty($_SESSION['usuario_id'])) {
@@ -1030,79 +1027,6 @@ class GestionarEstadoUseCase extends Database
 
         header('Location: index.php?route=panel');
         exit;
-    }
-
-    private function cargarUsuarioLogueado(\PDO $db): Usuario
-    {
-        $id = (int) $_SESSION['usuario_id'];
-        $stmt = $db->prepare(
-            'SELECT id, cedula, nombres, email, password, rol, estado
-             FROM usuarios
-             WHERE id = :id AND estado = 1
-             LIMIT 1'
-        );
-        $stmt->execute(['id' => $id]);
-        $row = $stmt->fetch();
-
-        if ($row === false) {
-            $_SESSION = [];
-            session_destroy();
-            header('Location: index.php?route=login');
-            exit;
-        }
-
-        if ((string) $row['rol'] === 'administrador') {
-            return new Administrador(
-                (int) $row['id'],
-                (string) $row['cedula'],
-                (string) $row['nombres'],
-                (string) $row['email'],
-                (string) $row['password'],
-                (bool) $row['estado']
-            );
-        }
-
-        return new Cliente(
-            (int) $row['id'],
-            (string) $row['cedula'],
-            (string) $row['nombres'],
-            (string) $row['email'],
-            (string) $row['password'],
-            (bool) $row['estado']
-        );
-    }
-}
-</file>
-
-<file path="src/Socket/Notificador.php">
-<?php
-
-namespace App\Socket;
-
-use Ratchet\ConnectionInterface;
-use Ratchet\MessageComponentInterface;
-
-class Notificador implements MessageComponentInterface
-{
-    public function onOpen(ConnectionInterface $conn): void
-    {
-        echo "Nueva conexion detectada! ID: {$conn->resourceId}" . PHP_EOL;
-    }
-
-    public function onMessage(ConnectionInterface $from, $msg): void
-    {
-        echo "Mensaje recibido de {$from->resourceId}: {$msg}" . PHP_EOL;
-    }
-
-    public function onClose(ConnectionInterface $conn): void
-    {
-        echo "Conexion cerrada. ID: {$conn->resourceId}" . PHP_EOL;
-    }
-
-    public function onError(ConnectionInterface $conn, \Exception $e): void
-    {
-        echo "Error en conexion {$conn->resourceId}: {$e->getMessage()}" . PHP_EOL;
-        $conn->close();
     }
 }
 </file>
@@ -1208,61 +1132,6 @@ class Notificador implements MessageComponentInterface
     </script>
 </body>
 </html>
-</file>
-
-<file path="src/controllers/router.php">
-<?php
-
-declare(strict_types=1);
-
-require_once dirname(__DIR__, 2) . '/helpers/auth.php';
-
-$route = $_GET['route'] ?? 'login';
-
-$route = is_string($route) ? strtolower(trim($route)) : 'login';
-
-switch ($route) {
-
-    case 'login':
-        auth_login();
-        break;
-
-    case 'registro':
-        auth_registro();
-        break;
-
-    case 'logout':
-        logout();
-        break;
-
-    case 'panel':
-        (new \App\Controllers\BancoController())->mostrarPanel();
-        break;
-
-    case 'depositar':
-        (new \App\Controllers\BancoController())->procesarDeposito();
-        break;
-
-    case 'retirar':
-        (new \App\Controllers\BancoController())->procesarRetiro();
-        break;
-
-    case 'transferir':
-        (new \App\Controllers\BancoController())->procesarTransferencia();
-        break;
-
-    case 'toggle_estado':
-        (new \App\Controllers\BancoController())->toggleEstado();
-        break;
-
-    case 'reporte_pdf':
-        (new \App\Controllers\BancoController())->generarReportePdf();
-        break;
-
-    default:
-        auth_login();
-        break;
-}
 </file>
 
 <file path="src/models/Database.php">
@@ -1388,6 +1257,250 @@ abstract class Database
 </html>
 </file>
 
+<file path="src/controllers/router.php">
+<?php
+
+declare(strict_types=1);
+
+require_once dirname(__DIR__, 2) . '/helpers/auth.php';
+
+$route = $_GET['route'] ?? 'login';
+
+$route = is_string($route) ? strtolower(trim($route)) : 'login';
+
+switch ($route) {
+
+    case 'login':
+        auth_login();
+        break;
+
+    case 'registro':
+        auth_registro();
+        break;
+
+    case 'logout':
+        logout();
+        break;
+
+    case 'panel':
+        (new \App\Controllers\BancoController())->mostrarPanel();
+        break;
+
+    case 'depositar':
+        (new \App\Controllers\BancoController())->procesarDeposito();
+        break;
+
+    case 'retirar':
+        (new \App\Controllers\BancoController())->procesarRetiro();
+        break;
+
+    case 'transferir':
+        (new \App\Controllers\BancoController())->procesarTransferencia();
+        break;
+
+    case 'toggle_estado':
+        (new \App\Controllers\BancoController())->toggleEstado();
+        break;
+
+    case 'reporte_pdf':
+        (new \App\Controllers\BancoController())->generarReportePdf();
+        break;
+
+    default:
+        auth_login();
+        break;
+}
+</file>
+
+<file path="README.md">
+# Sistema Bancario Simulado en PHP
+
+Proyecto demostrativo orientado a objetos con estructura tipo MVC, autoloading PSR-4 mediante Composer y base de infraestructura WebSocket con Ratchet.
+
+## Estructura actual del proyecto
+
+```text
+BANCO - PHP/
+├── bin/
+│   └── socket-server.php
+├── src/
+│   ├── controllers/
+│   │   └── BancoController.php
+│   ├── models/
+│   │   ├── Cuenta.php
+│   │   ├── Movimiento.php
+│   │   ├── Usuario.php
+│   │   └── Roles/
+│   │       ├── Administrador.php
+│   │       └── Cliente.php
+│   ├── views/
+│   │   └── banco_view.php
+│   └── Socket/
+│       └── Notificador.php
+├── vendor/
+├── composer.json
+├── composer.lock
+└── index.php
+```
+
+## Autoloading y Namespaces
+
+El proyecto utiliza Composer con mapeo PSR-4:
+
+```json
+"autoload": {
+  "psr-4": {
+    "App\\": "src/"
+  }
+}
+```
+
+Namespaces principales:
+
+- `App\Controllers` para controladores en `src/controllers/`
+- `App\Models` para modelos base en `src/models/`
+- `App\Models\Roles` para roles en `src/models/Roles/`
+- `App\Socket` para infraestructura WebSocket en `src/Socket/`
+
+El punto de entrada `index.php` carga solo `vendor/autoload.php` y luego instancia el controlador con `use App\Controllers\BancoController;`.
+
+## Capa de dominio (POO)
+
+### Jerarquia de clases
+
+- `Usuario` (abstracta):
+  - Centraliza atributos comunes (`id`, `cedula`, `nombres`, `email`, `password`, `rol`, `estado`).
+  - Define el metodo polimorfico `obtenerPermisos()`.
+- `Roles\Cliente` extiende `Usuario`:
+  - Implementa permisos operativos del cliente.
+- `Roles\Administrador` extiende `Usuario`:
+  - Implementa permisos administrativos.
+
+### Flujo funcional
+
+- `Cuenta` se asocia a `Usuario` por `usuario_id`.
+- `Cuenta` registra objetos `Movimiento` en memoria al depositar, retirar o transferir.
+- `transferir(Cuenta $destino, float $monto)` valida estados/saldo y registra movimientos de salida/entrada.
+
+## Simulacion actual (controlador + vista)
+
+`BancoController`:
+
+- Crea instancias de administrador y cliente.
+- Crea cuenta origen y destino.
+- Simula un deposito y una transferencia.
+- Expone a la vista variables de estado y mensaje:
+  - `$depositoExitoso`, `$transferenciaExitosa`
+  - `$depositoEstado`, `$transferenciaEstado`
+  - `$depositoMensaje`, `$transferenciaMensaje`
+
+`banco_view.php` renderiza los datos y muestra los mensajes de la simulacion en la seccion de trazabilidad de movimientos.
+
+## Infraestructura WebSocket (nuevo)
+
+### 1) Componente de mensajes
+
+Archivo: `src/Socket/Notificador.php`
+
+- Namespace: `App\Socket`
+- Implementa `Ratchet\MessageComponentInterface`
+- Logs implementados:
+  - `onOpen`: nueva conexion y `resourceId`
+  - `onMessage`: mensaje recibido y `resourceId`
+  - `onClose`: cierre de conexion
+  - `onError`: error de conexion y cierre del socket
+
+### 2) Script del servidor
+
+Archivo: `bin/socket-server.php`
+
+- Carga `vendor/autoload.php`
+- Levanta `IoServer` + `HttpServer` + `WsServer`
+- Usa `new App\Socket\Notificador()`
+- Escucha en el puerto `8080`
+- Imprime al iniciar:
+  - `Servidor de WebSockets iniciado en el puerto 8080...`
+
+## Instalacion
+
+```bash
+composer install
+```
+
+Si realizas cambios en clases/namespaces, regenera autoload:
+
+```bash
+composer dump-autoload
+```
+
+### Servidor WebSocket
+
+En otra terminal:
+
+```bash
+php bin/socket-server.php
+```
+
+TRUNCATE TABLE movimientos;
+</file>
+
+<file path="src/models/Movimiento.php">
+<?php
+
+declare(strict_types=1);
+
+namespace App\Models;
+
+class Movimiento extends Database
+{
+    private int $id;
+    private int $cuenta_id;
+    private string $tipo;
+    private float $monto;
+    private string $fecha;
+    private string $descripcion;
+
+    public function __construct(int $id, int $cuenta_id, string $tipo, float $monto, string $fecha, string $descripcion)
+    {
+        $this->id = $id;
+        $this->cuenta_id = $cuenta_id;
+        $this->tipo = $tipo;
+        $this->monto = $monto;
+        $this->fecha = $fecha;
+        $this->descripcion = $descripcion;
+    }
+
+    public function getId(): int { return $this->id; }
+    
+    public function setId(int $id): void { $this->id = $id; }
+
+
+    public function getCuentaId(): int { return $this->cuenta_id; }
+
+    public function setCuentaId(int $cuenta_id): void { $this->cuenta_id = $cuenta_id; }
+
+
+    public function getTipo(): string { return $this->tipo; }
+
+    public function setTipo(string $tipo): void { $this->tipo = $tipo; }
+
+
+    public function getMonto(): float { return $this->monto; }
+
+    public function setMonto(float $monto): void { $this->monto = $monto; }
+
+
+    public function getFecha(): string { return $this->fecha; }
+
+    public function setFecha(string $fecha): void { $this->fecha = $fecha; }
+
+
+    public function getDescripcion(): string { return $this->descripcion; }
+
+    public function setDescripcion(string $descripcion): void { $this->descripcion = $descripcion; }
+}
+</file>
+
 <file path="src/models/UseCase/CargarPanelUseCase.php">
 <?php
 
@@ -1441,49 +1554,6 @@ class CargarPanelUseCase extends Database
         }
 
         require_once __DIR__ . '/../../views/banco_view.php';
-    }
-
-    protected function cargarUsuarioLogueado(\PDO $db): Usuario
-    {
-        $id = (int) $_SESSION['usuario_id'];
-        $stmt = $db->prepare('SELECT id, cedula, nombres, email, 
-                              password, rol, estado 
-                              FROM usuarios 
-                              WHERE id = :id 
-                              AND estado = 1 
-                              LIMIT 1');
-
-        $stmt->execute(['id' => $id]);
-        $row = $stmt->fetch();
-        
-        if ($row === false) {
-            $_SESSION = [];
-            session_destroy();
-            header('Location: index.php?route=login');
-            exit;
-        }
-
-        $rol = (string) $row['rol'];
-        
-        if ($rol === 'administrador') {
-            return new Administrador((int) $row['id'], 
-                                     (string) $row['cedula'], 
-                                     (string) $row['nombres'], 
-                                     (string) $row['email'], 
-                                     (string) $row['password'], 
-                                     (bool) $row['estado']);
-        }
-
-        if ($rol === 'cliente') {
-            return new Cliente((int) $row['id'], 
-                               (string) $row['cedula'], 
-                               (string) $row['nombres'], 
-                               (string) $row['email'], 
-                               (string) $row['password'], 
-                               (bool) $row['estado']);
-        }
-        
-        throw new RuntimeException('Rol de usuario no reconocido.');
     }
 
     /**
@@ -1755,298 +1825,6 @@ class ProcesarTransferenciaUseCase extends Database
 
         exit;
     }
-}
-</file>
-
-<file path="composer.json">
-{
-    "name": "windows11/banco-php",
-    "autoload": {
-        "psr-4": {
-            "App\\Models\\": "src/models/",
-            "App\\Controllers\\": "src/controllers/",
-            "App\\Config\\": "src/config/",
-            "App\\Traits\\": "src/Traits/",
-            "App\\Socket\\": "src/Socket/"
-        }
-    },
-    "authors": [
-        {
-            "name": "Victor Ghelfi",
-            "email": "ghelfivictor3@gmail.com"
-        }
-    ],
-    "require": {
-        "cboden/ratchet": "^0.4.4",
-        "dompdf/dompdf": "^3.1"
-    }
-}
-</file>
-
-<file path="README.md">
-# Sistema Bancario Simulado en PHP
-
-Proyecto demostrativo orientado a objetos con estructura tipo MVC, autoloading PSR-4 mediante Composer y base de infraestructura WebSocket con Ratchet.
-
-## Estructura actual del proyecto
-
-```text
-BANCO - PHP/
-├── bin/
-│   └── socket-server.php
-├── src/
-│   ├── controllers/
-│   │   └── BancoController.php
-│   ├── models/
-│   │   ├── Cuenta.php
-│   │   ├── Movimiento.php
-│   │   ├── Usuario.php
-│   │   └── Roles/
-│   │       ├── Administrador.php
-│   │       └── Cliente.php
-│   ├── views/
-│   │   └── banco_view.php
-│   └── Socket/
-│       └── Notificador.php
-├── vendor/
-├── composer.json
-├── composer.lock
-└── index.php
-```
-
-## Autoloading y Namespaces
-
-El proyecto utiliza Composer con mapeo PSR-4:
-
-```json
-"autoload": {
-  "psr-4": {
-    "App\\": "src/"
-  }
-}
-```
-
-Namespaces principales:
-
-- `App\Controllers` para controladores en `src/controllers/`
-- `App\Models` para modelos base en `src/models/`
-- `App\Models\Roles` para roles en `src/models/Roles/`
-- `App\Socket` para infraestructura WebSocket en `src/Socket/`
-
-El punto de entrada `index.php` carga solo `vendor/autoload.php` y luego instancia el controlador con `use App\Controllers\BancoController;`.
-
-## Capa de dominio (POO)
-
-### Jerarquia de clases
-
-- `Usuario` (abstracta):
-  - Centraliza atributos comunes (`id`, `cedula`, `nombres`, `email`, `password`, `rol`, `estado`).
-  - Define el metodo polimorfico `obtenerPermisos()`.
-- `Roles\Cliente` extiende `Usuario`:
-  - Implementa permisos operativos del cliente.
-- `Roles\Administrador` extiende `Usuario`:
-  - Implementa permisos administrativos.
-
-### Flujo funcional
-
-- `Cuenta` se asocia a `Usuario` por `usuario_id`.
-- `Cuenta` registra objetos `Movimiento` en memoria al depositar, retirar o transferir.
-- `transferir(Cuenta $destino, float $monto)` valida estados/saldo y registra movimientos de salida/entrada.
-
-## Simulacion actual (controlador + vista)
-
-`BancoController`:
-
-- Crea instancias de administrador y cliente.
-- Crea cuenta origen y destino.
-- Simula un deposito y una transferencia.
-- Expone a la vista variables de estado y mensaje:
-  - `$depositoExitoso`, `$transferenciaExitosa`
-  - `$depositoEstado`, `$transferenciaEstado`
-  - `$depositoMensaje`, `$transferenciaMensaje`
-
-`banco_view.php` renderiza los datos y muestra los mensajes de la simulacion en la seccion de trazabilidad de movimientos.
-
-## Infraestructura WebSocket (nuevo)
-
-### 1) Componente de mensajes
-
-Archivo: `src/Socket/Notificador.php`
-
-- Namespace: `App\Socket`
-- Implementa `Ratchet\MessageComponentInterface`
-- Logs implementados:
-  - `onOpen`: nueva conexion y `resourceId`
-  - `onMessage`: mensaje recibido y `resourceId`
-  - `onClose`: cierre de conexion
-  - `onError`: error de conexion y cierre del socket
-
-### 2) Script del servidor
-
-Archivo: `bin/socket-server.php`
-
-- Carga `vendor/autoload.php`
-- Levanta `IoServer` + `HttpServer` + `WsServer`
-- Usa `new App\Socket\Notificador()`
-- Escucha en el puerto `8080`
-- Imprime al iniciar:
-  - `Servidor de WebSockets iniciado en el puerto 8080...`
-
-## Instalacion
-
-```bash
-composer install
-```
-
-Si realizas cambios en clases/namespaces, regenera autoload:
-
-```bash
-composer dump-autoload
-```
-
-### Servidor WebSocket
-
-En otra terminal:
-
-```bash
-php bin/socket-server.php
-```
-
-TRUNCATE TABLE movimientos;
-</file>
-
-<file path="src/models/Movimiento.php">
-<?php
-
-declare(strict_types=1);
-
-namespace App\Models;
-
-class Movimiento extends Database
-{
-    private int $id;
-    private int $cuenta_id;
-    private string $tipo;
-    private float $monto;
-    private string $fecha;
-    private string $descripcion;
-
-    public function __construct(int $id, int $cuenta_id, string $tipo, float $monto, string $fecha, string $descripcion)
-    {
-        $this->id = $id;
-        $this->cuenta_id = $cuenta_id;
-        $this->tipo = $tipo;
-        $this->monto = $monto;
-        $this->fecha = $fecha;
-        $this->descripcion = $descripcion;
-    }
-
-    public function getId(): int { return $this->id; }
-    
-    public function setId(int $id): void { $this->id = $id; }
-
-
-    public function getCuentaId(): int { return $this->cuenta_id; }
-
-    public function setCuentaId(int $cuenta_id): void { $this->cuenta_id = $cuenta_id; }
-
-
-    public function getTipo(): string { return $this->tipo; }
-
-    public function setTipo(string $tipo): void { $this->tipo = $tipo; }
-
-
-    public function getMonto(): float { return $this->monto; }
-
-    public function setMonto(float $monto): void { $this->monto = $monto; }
-
-
-    public function getFecha(): string { return $this->fecha; }
-
-    public function setFecha(string $fecha): void { $this->fecha = $fecha; }
-
-
-    public function getDescripcion(): string { return $this->descripcion; }
-
-    public function setDescripcion(string $descripcion): void { $this->descripcion = $descripcion; }
-}
-</file>
-
-<file path="src/models/Usuario.php">
-<?php
-
-declare(strict_types=1);
-
-namespace App\Models;
-
-use App\Traits\UsuarioTrait;
-
-abstract class Usuario extends Database
-{
-    use UsuarioTrait;
-
-    protected int $id;
-    protected string $cedula;
-    protected string $nombres;
-    protected string $email;
-    protected string $password;
-    protected string $rol;
-    protected bool $estado;
-
-    public function __construct(
-        int $id,
-        string $cedula,
-        string $nombres,
-        string $email,
-        string $password,
-        string $rol,
-        bool $estado = true
-    ) {
-        $this->id = $id;
-        $this->cedula = $cedula;
-        $this->nombres = $nombres;
-        $this->email = $email;
-        $this->password = $password;
-        $this->rol = $rol;
-        $this->estado = $estado;
-    }
-
-    abstract public function obtenerPermisos(): array;
-    
-
-    public function getId(): int { return $this->id; }
-
-    public function setId(int $id): void { $this->id = $id; }
-
-
-    public function getCedula(): string { return $this->cedula; }
-
-    public function setCedula(string $cedula): void { $this->cedula = $cedula; }
-
-
-    public function getNombres(): string { return $this->nombres; }
-
-    public function setNombres(string $nombres): void { $this->nombres = $nombres; }
-
-
-    public function getEmail(): string { return $this->email; }
-
-    public function setEmail(string $email): void { $this->email = $email; }
-
-
-    public function getPassword(): string { return $this->password; }
-
-    public function setPassword(string $password): void { $this->password = $password; }
-
-
-    public function getRol(): string { return $this->rol; }
-
-    public function setRol(string $rol): void { $this->rol = $rol; }
-
-
-    public function getEstado(): bool { return $this->estado; }
-
-    public function setEstado(bool $estado): void { $this->estado = $estado; }
 }
 </file>
 
@@ -4082,6 +3860,31 @@ body {
 }
 </file>
 
+<file path="composer.json">
+{
+    "name": "windows11/banco-php",
+    "autoload": {
+        "psr-4": {
+            "App\\Models\\": "src/models/",
+            "App\\Controllers\\": "src/controllers/",
+            "App\\Config\\": "src/config/",
+            "App\\Traits\\": "src/Traits/",
+            "App\\Socket\\": "src/Socket/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Victor Ghelfi",
+            "email": "ghelfivictor3@gmail.com"
+        }
+    ],
+    "require": {
+        "cboden/ratchet": "^0.4.4",
+        "dompdf/dompdf": "^3.1"
+    }
+}
+</file>
+
 <file path="database/schema.sql">
 -- Base de datos para BANCO - PHP (XAMPP / MySQL)
 
@@ -4194,6 +3997,84 @@ class Cliente extends Usuario
             'realizar_transferencias'
         ];
     }
+}
+</file>
+
+<file path="src/models/Usuario.php">
+<?php
+
+declare(strict_types=1);
+
+namespace App\Models;
+
+use App\Traits\UsuarioTrait;
+
+abstract class Usuario extends Database
+{
+    use UsuarioTrait;
+
+    protected int $id;
+    protected string $cedula;
+    protected string $nombres;
+    protected string $email;
+    protected string $password;
+    protected string $rol;
+    protected bool $estado;
+
+    public function __construct(
+        int $id,
+        string $cedula,
+        string $nombres,
+        string $email,
+        string $password,
+        string $rol,
+        bool $estado = true
+    ) {
+        $this->id = $id;
+        $this->cedula = $cedula;
+        $this->nombres = $nombres;
+        $this->email = $email;
+        $this->password = $password;
+        $this->rol = $rol;
+        $this->estado = $estado;
+    }
+
+    abstract public function obtenerPermisos(): array;
+    
+
+    public function getId(): int { return $this->id; }
+
+    public function setId(int $id): void { $this->id = $id; }
+
+
+    public function getCedula(): string { return $this->cedula; }
+
+    public function setCedula(string $cedula): void { $this->cedula = $cedula; }
+
+
+    public function getNombres(): string { return $this->nombres; }
+
+    public function setNombres(string $nombres): void { $this->nombres = $nombres; }
+
+
+    public function getEmail(): string { return $this->email; }
+
+    public function setEmail(string $email): void { $this->email = $email; }
+
+
+    public function getPassword(): string { return $this->password; }
+
+    public function setPassword(string $password): void { $this->password = $password; }
+
+
+    public function getRol(): string { return $this->rol; }
+
+    public function setRol(string $rol): void { $this->rol = $rol; }
+
+
+    public function getEstado(): bool { return $this->estado; }
+
+    public function setEstado(bool $estado): void { $this->estado = $estado; }
 }
 </file>
 

@@ -267,7 +267,14 @@
                         <button type="submit" class="quick-op-btn"><?php echo htmlspecialchars($textoToggle, ENT_QUOTES, 'UTF-8'); ?></button>
                     </form>
                     <?php if ($cuentaId !== null): ?>
-                    <a href="index.php?route=reporte_pdf&amp;cuenta_id=<?php echo (int) $cuentaId; ?>" class="quick-op-btn" style="text-decoration: none; display: inline-block; text-align: center;">
+                    <a
+                        href="index.php?route=reporte_pdf&amp;cuenta_id=<?php echo (int) $cuentaId; ?>"
+                        class="quick-op-btn js-generar-pdf"
+                        style="text-decoration: none; display: inline-block; text-align: center;"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onclick="if (window.openPdfSuccessModal) { window.openPdfSuccessModal(); }"
+                    >
                         Generar Reporte PDF
                     </a>
                     <?php endif; ?>
@@ -405,6 +412,13 @@
                 'fecha' => (string) ($rawOk['fecha'] ?? date('d/m/Y H:i:s')),
                 'descripcion_usuario' => (string) ($rawOk['descripcion_usuario'] ?? ''),
             ];
+        } elseif (is_array($rawOk) && ($rawOk['modal'] ?? '') === 'gestion_estado') {
+            $modalBootstrap = [
+                'kind' => 'gestion_estado',
+                'accion' => (string) ($rawOk['accion'] ?? ''),
+                'usuario_id' => (int) ($rawOk['usuario_id'] ?? 0),
+                'mensaje' => (string) ($rawOk['mensaje'] ?? ''),
+            ];
         } elseif (is_array($rawOk)) {
             $montoFmt = isset($rawOk['monto_formateado'])
                 ? (string) $rawOk['monto_formateado']
@@ -436,10 +450,13 @@
         unset($_SESSION['panel_error']);
     }
 
+    $modalKind = (string) ($modalBootstrap['kind'] ?? '');
     $hidePanelModal = $modalBootstrap === null
-        || (($modalBootstrap['kind'] ?? '') === 'recibo_transferencia');
+        || in_array($modalKind, ['recibo_transferencia', 'gestion_estado'], true);
     $hideTransferReceipt = $modalBootstrap === null
-        || (($modalBootstrap['kind'] ?? '') !== 'recibo_transferencia');
+        || $modalKind !== 'recibo_transferencia';
+    $hideEstadoModal = $modalBootstrap === null
+        || $modalKind !== 'gestion_estado';
     ?>
 
     <div
@@ -532,6 +549,80 @@
         </div>
     </div>
 
+    <div
+        id="estado-modal-root"
+        class="panel-modal-root"
+        <?php echo $hideEstadoModal ? 'hidden' : ''; ?>
+        aria-hidden="true"
+    >
+        <div class="panel-modal-backdrop" id="estado-modal-backdrop"></div>
+        <div
+            class="panel-modal-dialog panel-modal-dialog--gestion-estado"
+            id="estado-modal-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="estado-modal-title"
+        >
+            <div class="panel-modal-icon panel-modal-icon--admin" id="estado-modal-icon" aria-hidden="true"></div>
+            <p class="panel-modal-subtitle">Acción de administrador</p>
+            <h2 class="panel-modal-title" id="estado-modal-title">Estado actualizado</h2>
+            <dl class="panel-modal-meta">
+                <div>
+                    <dt>Acción realizada</dt>
+                    <dd id="estado-modal-accion"></dd>
+                </div>
+                <div>
+                    <dt>Usuario afectado</dt>
+                    <dd id="estado-modal-usuario"></dd>
+                </div>
+                <div>
+                    <dt>Detalle</dt>
+                    <dd id="estado-modal-mensaje"></dd>
+                </div>
+            </dl>
+            <div class="panel-modal-actions">
+                <button type="button" class="panel-modal-btn" id="estado-modal-close">Entendido</button>
+            </div>
+        </div>
+    </div>
+
+    <div
+        id="pdf-modal-root"
+        class="panel-modal-root"
+        hidden
+        aria-hidden="true"
+    >
+        <div class="panel-modal-backdrop" id="pdf-modal-backdrop"></div>
+        <div
+            class="panel-modal-dialog panel-modal-dialog--pdf"
+            id="pdf-modal-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pdf-modal-title"
+        >
+            <div class="panel-modal-icon panel-modal-icon--pdf" id="pdf-modal-icon" aria-hidden="true"></div>
+            <p class="panel-modal-subtitle">Documento generado</p>
+            <h2 class="panel-modal-title" id="pdf-modal-title">PDF Generado</h2>
+            <dl class="panel-modal-meta">
+                <div>
+                    <dt>Tipo de documento</dt>
+                    <dd>Reporte de movimientos de cuenta</dd>
+                </div>
+                <div>
+                    <dt>Estado</dt>
+                    <dd>La descarga se abrió en una nueva pestaña</dd>
+                </div>
+                <div>
+                    <dt>Indicación</dt>
+                    <dd>Puede seguir administrando el panel sin interrupciones</dd>
+                </div>
+            </dl>
+            <div class="panel-modal-actions">
+                <button type="button" class="panel-modal-btn" id="pdf-modal-close">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const socket = new WebSocket('ws://localhost:8080');
         socket.onopen = function() {
@@ -540,6 +631,68 @@
     </script>
     <script>
         (function () {
+            var svgShield = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>';
+            var svgDoc = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>';
+
+            var pdfRoot = document.getElementById('pdf-modal-root');
+            var pdfBackdrop = document.getElementById('pdf-modal-backdrop');
+            var pdfCloseBtn = document.getElementById('pdf-modal-close');
+            var pdfIconEl = document.getElementById('pdf-modal-icon');
+            var pdfEscBound = false;
+
+            function onPdfEscKey(e) {
+                if (e.key === 'Escape' && pdfRoot && pdfRoot.classList.contains('is-open')) {
+                    closePdfModal();
+                }
+            }
+
+            function closePdfModal() {
+                if (!pdfRoot) {
+                    return;
+                }
+                if (pdfEscBound) {
+                    document.removeEventListener('keydown', onPdfEscKey);
+                    pdfEscBound = false;
+                }
+                pdfRoot.classList.remove('is-open');
+                pdfRoot.setAttribute('aria-hidden', 'true');
+                setTimeout(function () {
+                    pdfRoot.setAttribute('hidden', '');
+                }, 280);
+            }
+
+            function openPdfModal() {
+                if (!pdfRoot) {
+                    return;
+                }
+                if (pdfIconEl && !pdfIconEl.innerHTML) {
+                    pdfIconEl.innerHTML = svgDoc;
+                }
+                pdfRoot.removeAttribute('hidden');
+                pdfRoot.setAttribute('aria-hidden', 'false');
+                if (!pdfEscBound) {
+                    document.addEventListener('keydown', onPdfEscKey);
+                    pdfEscBound = true;
+                }
+                requestAnimationFrame(function () {
+                    requestAnimationFrame(function () {
+                        pdfRoot.classList.add('is-open');
+                    });
+                });
+            }
+
+            window.openPdfSuccessModal = openPdfModal;
+
+            if (pdfCloseBtn) {
+                pdfCloseBtn.addEventListener('click', closePdfModal);
+            }
+            if (pdfBackdrop) {
+                pdfBackdrop.addEventListener('click', closePdfModal);
+            }
+            if (pdfIconEl) {
+                pdfIconEl.innerHTML = svgDoc;
+            }
+
             var boot = <?php echo json_encode($modalBootstrap, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
             if (!boot) {
                 return;
@@ -597,40 +750,89 @@
                 return;
             }
 
+            if (boot.kind === 'gestion_estado') {
+                var estadoRoot = document.getElementById('estado-modal-root');
+                var estadoBackdrop = document.getElementById('estado-modal-backdrop');
+                var estadoCloseBtn = document.getElementById('estado-modal-close');
+                var estadoIconEl = document.getElementById('estado-modal-icon');
+
+                function onEstadoEscKey(e) {
+                    if (e.key === 'Escape' && estadoRoot.classList.contains('is-open')) {
+                        closeEstadoModal();
+                    }
+                }
+
+                function closeEstadoModal() {
+                    document.removeEventListener('keydown', onEstadoEscKey);
+                    estadoRoot.classList.remove('is-open');
+                    estadoRoot.setAttribute('aria-hidden', 'true');
+                    setTimeout(function () {
+                        estadoRoot.setAttribute('hidden', '');
+                    }, 280);
+                }
+
+                function openEstadoModal() {
+                    estadoRoot.removeAttribute('hidden');
+                    estadoRoot.setAttribute('aria-hidden', 'false');
+                    requestAnimationFrame(function () {
+                        requestAnimationFrame(function () {
+                            estadoRoot.classList.add('is-open');
+                        });
+                    });
+                }
+
+                estadoIconEl.innerHTML = svgShield;
+                var accionRaw = boot.accion || '';
+                var accionLabel = accionRaw
+                    ? (accionRaw.charAt(0).toUpperCase() + accionRaw.slice(1))
+                    : '—';
+                document.getElementById('estado-modal-accion').textContent = accionLabel;
+                document.getElementById('estado-modal-usuario').textContent =
+                    boot.usuario_id ? ('#' + boot.usuario_id) : '—';
+                document.getElementById('estado-modal-mensaje').textContent = boot.mensaje || '—';
+
+                estadoCloseBtn.addEventListener('click', closeEstadoModal);
+                estadoBackdrop.addEventListener('click', closeEstadoModal);
+                document.addEventListener('keydown', onEstadoEscKey);
+
+                openEstadoModal();
+                return;
+            }
+
             if (boot.kind !== 'panel_modal') {
                 return;
             }
 
             var payload = boot;
-            var root = document.getElementById('panel-modal-root');
-            var backdrop = document.getElementById('panel-modal-backdrop');
-            var iconEl = document.getElementById('panel-modal-icon');
+            var panelRoot = document.getElementById('panel-modal-root');
+            var panelBackdrop = document.getElementById('panel-modal-backdrop');
+            var panelIconEl = document.getElementById('panel-modal-icon');
             var titleEl = document.getElementById('panel-modal-title');
             var successBlock = document.getElementById('panel-modal-success-block');
             var errorBlock = document.getElementById('panel-modal-error-block');
-            var closeBtn = document.getElementById('panel-modal-close');
+            var panelCloseBtn = document.getElementById('panel-modal-close');
 
-            function onEscKey(e) {
-                if (e.key === 'Escape' && root.classList.contains('is-open')) {
-                    closeModal();
+            function onPanelEscKey(e) {
+                if (e.key === 'Escape' && panelRoot.classList.contains('is-open')) {
+                    closePanelModal();
                 }
             }
 
-            function closeModal() {
-                document.removeEventListener('keydown', onEscKey);
-                root.classList.remove('is-open');
-                root.setAttribute('aria-hidden', 'true');
+            function closePanelModal() {
+                document.removeEventListener('keydown', onPanelEscKey);
+                panelRoot.classList.remove('is-open');
+                panelRoot.setAttribute('aria-hidden', 'true');
                 setTimeout(function () {
-                    root.setAttribute('hidden', '');
+                    panelRoot.setAttribute('hidden', '');
                 }, 280);
             }
 
-            function openModal() {
-                root.removeAttribute('hidden');
-                root.setAttribute('aria-hidden', 'false');
+            function openPanelModal() {
+                panelRoot.removeAttribute('hidden');
+                panelRoot.setAttribute('aria-hidden', 'false');
                 requestAnimationFrame(function () {
                     requestAnimationFrame(function () {
-                        root.classList.add('is-open');
+                        panelRoot.classList.add('is-open');
                     });
                 });
             }
@@ -641,7 +843,7 @@
                 dialog.classList.add('panel-modal-dialog--success');
                 dialog.classList.remove('panel-modal-dialog--error');
                 dialog.classList.remove('panel-modal-dialog--transfer-receipt');
-                iconEl.innerHTML = svgCheck;
+                panelIconEl.innerHTML = svgCheck;
                 titleEl.textContent = 'Operación exitosa';
                 document.getElementById('panel-modal-tipo').textContent = payload.tipo || '';
                 document.getElementById('panel-modal-monto').textContent = payload.monto_formateado || '';
@@ -653,18 +855,18 @@
                 dialog.classList.add('panel-modal-dialog--error');
                 dialog.classList.remove('panel-modal-dialog--success');
                 dialog.classList.remove('panel-modal-dialog--transfer-receipt');
-                iconEl.innerHTML = svgWarn;
+                panelIconEl.innerHTML = svgWarn;
                 titleEl.textContent = 'Operación no realizada';
                 document.getElementById('panel-modal-mensaje').textContent = payload.mensaje || '';
                 successBlock.hidden = true;
                 errorBlock.hidden = false;
             }
 
-            closeBtn.addEventListener('click', closeModal);
-            backdrop.addEventListener('click', closeModal);
-            document.addEventListener('keydown', onEscKey);
+            panelCloseBtn.addEventListener('click', closePanelModal);
+            panelBackdrop.addEventListener('click', closePanelModal);
+            document.addEventListener('keydown', onPanelEscKey);
 
-            openModal();
+            openPanelModal();
         })();
     </script>
     <script>
