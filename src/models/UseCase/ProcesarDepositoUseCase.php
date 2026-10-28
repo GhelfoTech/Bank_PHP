@@ -114,7 +114,6 @@ class ProcesarDepositoUseCase extends Database
         $rol = (string) $row['rol'];
 
         if ($rol === 'administrador') {
-
             return new Administrador(
                 (int) $row['id'],
                 (string) $row['cedula'],
@@ -125,14 +124,21 @@ class ProcesarDepositoUseCase extends Database
             );
         }
 
-        return new Cliente(
-            (int) $row['id'],
-            (string) $row['cedula'],
-            (string) $row['nombres'],
-            (string) $row['email'],
-            (string) $row['password'],
-            (bool) $row['estado']
-        );
+        if ($rol === 'cliente') {
+            return new Cliente(
+                (int) $row['id'],
+                (string) $row['cedula'],
+                (string) $row['nombres'],
+                (string) $row['email'],
+                (string) $row['password'],
+                (bool) $row['estado']
+            );
+        }
+
+        $_SESSION = [];
+        session_destroy();
+        header('Location: index.php?route=login');
+        exit;
     }
 
     private function cargarCuentasDeUsuario(\PDO $db, int $usuarioId): array

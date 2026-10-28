@@ -26,25 +26,27 @@ class CargarPanelUseCase extends Database
 
         $cuentaOrigen = null;
         $cuentaDestino = null;
-
         $historial = [];
         $usuariosGestion = [];
 
-        if (in_array($usuario->getRol(), ['cliente', 'administrador'], true)) {
+        $rolActual = $usuario->getRol();
+        $esAdministrador = $rolActual === 'administrador';
+        $puedeOperarFinancieramente = in_array($rolActual, ['cliente', 'administrador'], true);
+
+        if ($puedeOperarFinancieramente) {
             $cuentas = $this->cargarCuentasDeUsuario($db, $usuario->getId());
-            
+
             if (count($cuentas) >= 2) {
                 $cuentaOrigen = $cuentas[0];
                 $cuentaDestino = $cuentas[1];
-            } 
-            elseif (count($cuentas) === 1) {
+            } elseif (count($cuentas) === 1) {
                 $cuentaOrigen = $cuentas[0];
             }
-            
+
             $historial = Cuenta::obtenerMovimientosPorUsuarioId($usuario->getId());
         }
 
-        if ($usuario->getRol() === 'administrador') {
+        if ($esAdministrador) {
             $usuariosGestion = $this->listarUsuariosParaGestion($db, $usuario->getId());
         }
 
