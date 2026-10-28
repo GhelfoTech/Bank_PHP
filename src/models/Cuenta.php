@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Traits\CuentaTrait;
 use PDO;
 use Throwable;
 
 class Cuenta extends Database
 {
+    use CuentaTrait;
+
     private int $id;
     private int $usuario_id;
     private string $numero_cuenta;
@@ -36,14 +39,9 @@ class Cuenta extends Database
         return $this->pdo;
     }
     
-    public function validarSaldo(float $monto): bool
-    {
-        return $this->saldo >= $monto;
-    }
-    
     public function depositar(float $monto): bool
     {
-        if ($monto <= 0 || !$this->estado) {
+        if (!$this->esMontoOperable($monto)) {
             return false;
         }
     
@@ -78,7 +76,7 @@ class Cuenta extends Database
     
     public function retirar(float $monto): bool
     {
-        if ($monto <= 0 || !$this->estado || !$this->validarSaldo($monto)) {
+        if (!$this->esMontoOperable($monto) || !$this->validarSaldo($monto)) {
             return false;
         }
     
@@ -120,8 +118,10 @@ class Cuenta extends Database
     public static function obtenerCuentaActivaConTitularPorNumero(string $numeroCuenta): ?array
     {
         $numero = trim($numeroCuenta);
-    
-        if ($numero === '') return null;
+
+        if (!self::esNumeroCuentaValido($numero)) {
+            return null;
+        }
         $helper = new self(0, 0, '', 0.0, false);
         $db = $helper->getConnection();
         $stmt = $db->prepare('SELECT c.id, c.usuario_id, c.numero_cuenta, c.saldo, c.estado, u.cedula 
@@ -176,7 +176,9 @@ class Cuenta extends Database
                                string $nombreOrigen = '', 
                                string $nombreDestino = ''): bool
     {
-        if ($monto <= 0 || !$this->estado || !$destino->getEstado() || !$this->validarSaldo($monto)) return false;
+        if (!$this->esMontoOperable($monto) || !$destino->getEstado() || !$this->validarSaldo($monto)) {
+            return false;
+        }
         [$descEmisor, $descReceptor] = $this->construirDescripcionesTransferencia($destino, 
                                                                                   $descripcionPersonalizada, 
                                                                                   $nombreOrigen, 

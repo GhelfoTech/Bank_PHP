@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Traits\UsuarioTrait;
+
 abstract class Usuario extends Database
 {
+    use UsuarioTrait;
+
     protected int $id;
     protected string $cedula;
     protected string $nombres;

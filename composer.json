@@ -5,6 +5,7 @@
             "App\\Models\\": "src/models/",
             "App\\Controllers\\": "src/controllers/",
             "App\\Config\\": "src/config/",
+            "App\\Traits\\": "src/Traits/",
             "App\\Socket\\": "src/Socket/"
         }
     },

@@ -6,33 +6,22 @@ namespace App\Models\UseCase;
 
 use App\Models\Cuenta;
 use App\Models\Database;
-use App\Models\Roles\Administrador;
-use App\Models\Roles\Cliente;
-use App\Models\Usuario;
+use App\Traits\UseCase\OperacionesTrait;
 
 class ProcesarTransferenciaUseCase extends Database
 {
+    use OperacionesTrait;
+
     public function execute(): void
     {
-        if (empty($_SESSION['usuario_id'])) {
-
-            header('Location: index.php?route=login');
-
-            exit;
-        }
-
-        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-
-            header('Location: index.php?route=panel');
-
-            exit;
-        }
+        $this->exigirSesionActiva();
+        $this->exigirMetodoPost();
 
         $db = $this->getConnection();
 
         $usuario = $this->cargarUsuarioLogueado($db);
 
-        if (!in_array($usuario->getRol(), ['cliente', 'administrador'], true)) {
+        if (!$this->esRolConCuenta($usuario->getRol())) {
             $_SESSION['panel_error'] = 'Las transferencias solo están disponibles para usuarios con cuenta.';
 
             header('Location: index.php?route=panel');
@@ -94,7 +83,6 @@ class ProcesarTransferenciaUseCase extends Database
             header('Location: index.php?route=panel');
 
             exit;
-
         }
 
         if ($cuentaOrigen->getId() === $cuentaDestino->getId()) {
@@ -142,124 +130,5 @@ class ProcesarTransferenciaUseCase extends Database
         header('Location: index.php?route=panel');
 
         exit;
-    }
-
-    private function cargarUsuarioLogueado(\PDO $db): Usuario
-    {
-        $id = (int) $_SESSION['usuario_id'];
-
-        $stmt = $db->prepare(
-            'SELECT id, cedula, nombres, email, password, rol, estado
-             FROM usuarios
-             WHERE id = :id AND estado = 1
-             LIMIT 1'
-        );
-
-        $stmt->execute(['id' => $id]);
-        $row = $stmt->fetch();
-
-        if ($row === false) {
-            $_SESSION = [];
-            session_destroy();
-
-            header('Location: index.php?route=login');
-
-            exit;
-        }
-
-        $rol = (string) $row['rol'];
-
-        if ($rol === 'administrador') {
-            return new Administrador(
-                (int) $row['id'],
-                (string) $row['cedula'],
-                (string) $row['nombres'],
-                (string) $row['email'],
-                (string) $row['password'],
-                (bool) $row['estado']
-            );
-        }
-
-        if ($rol === 'cliente') {
-            return new Cliente(
-                (int) $row['id'],
-                (string) $row['cedula'],
-                (string) $row['nombres'],
-                (string) $row['email'],
-                (string) $row['password'],
-                (bool) $row['estado']
-            );
-        }
-
-        $_SESSION = [];
-        session_destroy();
-        header('Location: index.php?route=login');
-        exit;
-    }
-
-    private function cargarCuentasDeUsuario(\PDO $db, int $usuarioId): array
-    {
-        $stmt = $db->prepare(
-            'SELECT id, usuario_id, numero_cuenta, saldo, estado
-             FROM cuentas
-             WHERE usuario_id = :uid AND estado = 1
-             ORDER BY id ASC'
-        );
-
-        $stmt->execute(['uid' => $usuarioId]);
-
-        $cuentas = [];
-
-        while ($row = $stmt->fetch()) {
-
-            $cuenta = new Cuenta(
-                (int) $row['id'],
-                (int) $row['usuario_id'],
-                (string) $row['numero_cuenta'],
-                (float) $row['saldo'],
-                (bool) $row['estado']
-            );
-
-            $cuenta->activarPersistencia();
-
-            $cuentas[] = $cuenta;
-        }
-
-        return $cuentas;
-    }
-
-    private function parseMontoPositivo(mixed $raw): ?float
-    {
-
-        if (!is_string($raw)) { return null; }
-
-        $trim = trim($raw);
-
-        if ($trim === '') { return null; }
-
-        $normalized = str_replace(',', '.', $trim);
-
-        $valor = filter_var($normalized, FILTER_VALIDATE_FLOAT);
-
-        if ($valor === false || $valor <= 0 || !is_finite($valor)) {
-            return null;
-        }
-
-        return $valor;
-    }
-
-    private function cedulasEquivalentes(string $ingresada, string $registrada): bool
-    {
-        $a = strtoupper(preg_replace('/\s+/', '', trim($ingresada)));
-        $b = strtoupper(preg_replace('/\s+/', '', trim($registrada)));
-
-        if ($a === '' || $b === '') { return false; }
-
-        if (strcasecmp($a, $b) === 0) { return true; }
-
-        $da = preg_replace('/\D/', '', $a);
-        $dbDigits = preg_replace('/\D/', '', $b);
-
-        return $da !== '' && $da === $dbDigits;
     }
 }

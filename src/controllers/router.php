@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once dirname(__DIR__, 2) . '/helpers/auth.php';
+
 $route = $_GET['route'] ?? 'login';
 
 $route = is_string($route) ? strtolower(trim($route)) : 'login';
@@ -9,15 +11,15 @@ $route = is_string($route) ? strtolower(trim($route)) : 'login';
 switch ($route) {
 
     case 'login':
-        (new \App\Config\AuthController())->login();
+        auth_login();
         break;
 
     case 'registro':
-        (new \App\Config\AuthController())->registro();
+        auth_registro();
         break;
 
     case 'logout':
-        (new \App\Config\AuthController())->logout();
+        logout();
         break;
 
     case 'panel':
@@ -45,6 +47,6 @@ switch ($route) {
         break;
 
     default:
-        (new \App\Config\AuthController())->login();
+        auth_login();
         break;
 }

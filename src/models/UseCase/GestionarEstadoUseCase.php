@@ -8,10 +8,13 @@ use App\Models\Database;
 use App\Models\Roles\Administrador;
 use App\Models\Roles\Cliente;
 use App\Models\Usuario;
+use App\Traits\UseCase\OperacionesTrait;
 use PDOException;
 
 class GestionarEstadoUseCase extends Database
 {
+    use OperacionesTrait;
+
     public function execute(): void
     {
         if (empty($_SESSION['usuario_id'])) {
@@ -101,45 +104,5 @@ class GestionarEstadoUseCase extends Database
 
         header('Location: index.php?route=panel');
         exit;
-    }
-
-    private function cargarUsuarioLogueado(\PDO $db): Usuario
-    {
-        $id = (int) $_SESSION['usuario_id'];
-        $stmt = $db->prepare(
-            'SELECT id, cedula, nombres, email, password, rol, estado
-             FROM usuarios
-             WHERE id = :id AND estado = 1
-             LIMIT 1'
-        );
-        $stmt->execute(['id' => $id]);
-        $row = $stmt->fetch();
-
-        if ($row === false) {
-            $_SESSION = [];
-            session_destroy();
-            header('Location: index.php?route=login');
-            exit;
-        }
-
-        if ((string) $row['rol'] === 'administrador') {
-            return new Administrador(
-                (int) $row['id'],
-                (string) $row['cedula'],
-                (string) $row['nombres'],
-                (string) $row['email'],
-                (string) $row['password'],
-                (bool) $row['estado']
-            );
-        }
-
-        return new Cliente(
-            (int) $row['id'],
-            (string) $row['cedula'],
-            (string) $row['nombres'],
-            (string) $row['email'],
-            (string) $row['password'],
-            (bool) $row['estado']
-        );
     }
 }
